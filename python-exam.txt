@@ -1,0 +1,306 @@
+In the enchanted archipelago of Relicara, there lie N mystical islands arranged in a circle.
+
+Each island shelters exactly K ancient relics, where the j-th relic on an island is of type j and has a value V[i]
+
+You must select exactly one relic from each island.
+
+However, the ancient magic of Relicara imposes two sacred conditions:
+
+Across all islands, every relic type must be chosen at least once.
+
+No two adjacent islands (note: the islands form a circle, so the first and last islands are considered adjacent) may provide relics of the same type.
+
+
+Your task is to maximize the total value of the relics collected, if there is no valid selection print 0
+
+Constraints
+
+1 <= N <= 100
+
+1 <= K <= 10
+
+1 <= V[i][j] <= 10^5
+
+Given Code
+def max_value (N, K, V):
+
+# Write your code here
+
+def main():
+
+N= int(sys.stdin.readline().strip())
+
+K =int(sys.stdin.readline().strip())
+
+V = []
+
+for
+
+in range(N):
+
+V.append(list(map(lambda x: int(x), sys.stdin.readline().strip().split(" "))))
+
+result max_value(N, K, V)
+
+print(result)
+
+if_name="_main_":
+main
+
+
+QUestion 2: 
+
+You are given two integers N and K.
+
+Fin the total number of possible arrays A of size N which satisfy the following contions:
+
+0<A[i] <2^K+1.
+
+For all i between 1 an N A[i] & A[i + 1] > 0.
+
+Since the answer can be very large, return it modulo
+
+Constraints
+
+2 <= N <= 10^9
+
+1 <= K <= 100
+
+import sys
+
+def getCount(N, K):
+
+# Write your code here
+
+
+
+def main():
+
+N= int(sys.stdin.readline().strip())
+
+K = int(sys.stdin.readline().strip())
+
+result = getCount(N, K)
+
+print(result)
+
+if_name_ == "_main__":
+
+
+main()
+
+
+# ======================================================================
+# ==========================  SOLUTIONS  ===============================
+# ======================================================================
+
+
+# ----------------------------------------------------------------------
+# Question 1 : Relics of Relicara
+# ----------------------------------------------------------------------
+# Choose one relic type (0..K-1) for every island on a circle so that:
+#   * adjacent islands (circularly) have different types, and
+#   * every type is used at least once,
+# maximising the total value.  Print 0 when no valid selection exists.
+#
+# Idea: bitmask DP.  Fix the type of island 0 (to handle the circular
+# "first vs last" adjacency), then run a DP over the islands with state
+# (current type, set of types already used).  K <= 10 so 2^K masks fit.
+import sys
+
+
+def max_value(N, K, V):
+    NEG = float("-inf")
+    full = (1 << K) - 1
+
+    if N == 1:
+        # A single island is its own neighbour on the circle; every type
+        # must appear, which is only possible with exactly one type.
+        return V[0][0] if K == 1 else 0
+    if N < K:
+        # Fewer islands than types => cannot use every type at least once.
+        return 0
+
+    best = 0
+    for first in range(K):                       # fix island 0's type
+        # dp[t][mask] = best value so far with the current island of type t
+        # and mask = set of types already used.
+        dp = [[NEG] * (1 << K) for _ in range(K)]
+        dp[first][1 << first] = V[0][first]
+
+        for i in range(1, N):
+            ndp = [[NEG] * (1 << K) for _ in range(K)]
+            for mask in range(1 << K):
+                # Best and second best previous value for this mask so the
+                # previous type can be excluded in O(1).
+                b1 = b2 = NEG
+                arg1 = -1
+                for p in range(K):
+                    val = dp[p][mask]
+                    if val > b1:
+                        b2, b1, arg1 = b1, val, p
+                    elif val > b2:
+                        b2 = val
+                if b1 == NEG:
+                    continue
+                for t in range(K):
+                    base = b1 if arg1 != t else b2   # forbid repeating type
+                    if base == NEG:
+                        continue
+                    nmask = mask | (1 << t)
+                    cand = base + V[i][t]
+                    if cand > ndp[t][nmask]:
+                        ndp[t][nmask] = cand
+            dp = ndp
+
+        for t in range(K):                       # close the circle
+            if t != first and dp[t][full] > best:
+                best = dp[t][full]
+
+    return best
+
+
+def main():
+    tokens = sys.stdin.read().split()
+    pos = 0
+    N = int(tokens[pos]); pos += 1
+    K = int(tokens[pos]); pos += 1
+    V = []
+    for _ in range(N):
+        V.append([int(tokens[pos + j]) for j in range(K)])
+        pos += K
+    print(max_value(N, K, V))
+
+
+if __name__ == "__main__":
+    main()
+
+
+# ----------------------------------------------------------------------
+# Question 2 : Counting arrays with adjacent AND > 0
+# ----------------------------------------------------------------------
+# Count arrays A of length N with 0 < A[i] < 2^K + 1  (i.e. 1..2^K) such
+# that A[i] & A[i+1] > 0 for every adjacent pair, modulo 1_000_000_007.
+#
+# Treat each value 1..2^K-1 as a non-empty subset of K bits.  For N >= 2
+# an empty subset can never satisfy an edge, so we may count over ALL
+# 2^K subsets and the empty one is excluded automatically:
+#
+#   F(n) = sum_{j=1..n} B(j) * F(n-j),   F(0) = 1,
+#   B(j) = (-1)^(j-1) * w(j-1)^K,        w(0)=2, w(1)=3, w=w_-1+w_-2.
+#
+# (B comes from inclusion-exclusion on "disjoint" edges, whose count
+#  factorises over bits into a Fibonacci-like w.)  F obeys a linear
+# recurrence of order <= K+1, recovered with Berlekamp-Massey and then
+# evaluated at the huge N with Kitamasa.  The value 2^K itself shares no
+# bit with 1..2^K-1, so it only forms the constant array [2^K,...,2^K],
+# adding exactly 1.  (For the range 0 < A[i] < 2^K, drop that "+ 1".)
+import sys
+
+MOD = 1_000_000_007
+
+
+def _berlekamp_massey(S, mod):
+    ls, cur = [], []
+    lf, ld = 0, 0
+    for i in range(len(S)):
+        t = 0
+        for j in range(len(cur)):
+            t = (t + cur[j] * S[i - 1 - j]) % mod
+        if (S[i] - t) % mod == 0:
+            continue
+        if not cur:
+            cur = [0] * (i + 1)
+            lf, ld = i, (S[i] - t) % mod
+            continue
+        k = (S[i] - t) * pow(ld, mod - 2, mod) % mod
+        c = [0] * (i - lf - 1) + [k] + [(-k * x) % mod for x in ls]
+        if len(c) < len(cur):
+            c += [0] * (len(cur) - len(c))
+        for j in range(len(cur)):
+            c[j] = (c[j] + cur[j]) % mod
+        if i - len(cur) >= lf - len(ls):
+            ls, lf, ld = list(cur), i, (S[i] - t) % mod
+        cur = c
+    return [x % mod for x in cur]
+
+
+def _kitamasa(c, S, N, mod):
+    m = len(c)
+    if m == 0:
+        return 0
+
+    def mul(a, b):
+        res = [0] * (len(a) + len(b) - 1)
+        for i in range(len(a)):
+            if a[i]:
+                ai = a[i]
+                for j in range(len(b)):
+                    if b[j]:
+                        res[i + j] = (res[i + j] + ai * b[j]) % mod
+        for i in range(len(res) - 1, m - 1, -1):
+            coef = res[i]
+            if coef:
+                res[i] = 0
+                for j in range(m):
+                    res[i - 1 - j] = (res[i - 1 - j] + coef * c[j]) % mod
+        return res[:m]
+
+    result = [0] * m
+    result[0] = 1 % mod
+    base = [0] * m
+    if m == 1:
+        base[0] = c[0] % mod
+    else:
+        base[1] = 1 % mod
+    e = N
+    while e > 0:
+        if e & 1:
+            result = mul(result, base)
+        base = mul(base, base)
+        e >>= 1
+    ans = 0
+    for i in range(m):
+        ans = (ans + result[i] * S[i]) % mod
+    return ans
+
+
+def _F(N, K, mod):
+    L = 2 * (K + 1) + 5                       # enough terms for Berlekamp-Massey
+    w = [0] * (L + 1)
+    w[0], w[1] = 2 % mod, 3 % mod
+    for m in range(2, L + 1):
+        w[m] = (w[m - 1] + w[m - 2]) % mod
+    B = [0] * (L + 1)
+    for j in range(1, L + 1):
+        val = pow(w[j - 1], K, mod)
+        if (j - 1) & 1:
+            val = (-val) % mod
+        B[j] = val
+    F = [0] * (L + 1)
+    F[0] = 1 % mod
+    for n in range(1, L + 1):
+        s = 0
+        for j in range(1, n + 1):
+            s += B[j] * F[n - j]
+        F[n] = s % mod
+    if N <= L:
+        return F[N] % mod
+    rec = _berlekamp_massey(F, mod)
+    return _kitamasa(rec, F, N, mod)
+
+
+def getCount(N, K):
+    # Range is 1..2^K (0 < A[i] < 2^K + 1); the isolated value 2^K adds 1.
+    return (_F(N, K, MOD) + 1) % MOD
+
+
+def main():
+    N = int(sys.stdin.readline().strip())
+    K = int(sys.stdin.readline().strip())
+    result = getCount(N, K)
+    print(result)
+
+
+if __name__ == "__main__":
+    main()
