@@ -15,13 +15,14 @@ interface StoriesMenuProps {
     open: boolean;
     stories: Story[];
     onPlay: (id: string) => void;
-    onBuild: (text: string) => boolean;
+    onBuild: (text: string) => boolean | Promise<boolean>;
     onClose: () => void;
 }
 
 export default function StoriesMenu({ open, stories, onPlay, onBuild, onClose }: StoriesMenuProps) {
     const [text, setText] = useState('');
     const [error, setError] = useState(false);
+    const [busy, setBusy] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -41,21 +42,28 @@ export default function StoriesMenu({ open, stories, onPlay, onBuild, onClose }:
         if (open) {
             setText('');
             setError(false);
+            setBusy(false);
             const id = window.setTimeout(() => inputRef.current?.focus(), 340);
             return () => window.clearTimeout(id);
         }
     }, [open]);
 
-    const build = (value: string) => {
+    const build = async (value: string) => {
         const trimmed = value.trim();
-        if (!trimmed) return;
-        const ok = onBuild(trimmed);
-        if (!ok) setError(true);
+        if (!trimmed || busy) return;
+        setError(false);
+        setBusy(true);
+        try {
+            const ok = await onBuild(trimmed);
+            if (!ok) setError(true);
+        } finally {
+            setBusy(false);
+        }
     };
 
     const onSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        build(text);
+        void build(text);
     };
 
     return (
@@ -97,8 +105,8 @@ export default function StoriesMenu({ open, stories, onPlay, onBuild, onClose }:
                                 placeholder="e.g. how did zero become the computer?"
                                 aria-label="Describe a story to build"
                             />
-                            <button className="stories-build-btn" type="submit" disabled={!text.trim()}>
-                                Chart it
+                            <button className="stories-build-btn" type="submit" disabled={!text.trim() || busy}>
+                                {busy ? 'Charting…' : 'Chart it'}
                             </button>
                         </div>
                         {error && (
@@ -113,9 +121,10 @@ export default function StoriesMenu({ open, stories, onPlay, onBuild, onClose }:
                                     key={p}
                                     type="button"
                                     className="stories-example"
+                                    disabled={busy}
                                     onClick={() => {
                                         setText(p);
-                                        build(p);
+                                        void build(p);
                                     }}
                                 >
                                     {p}

@@ -867,6 +867,54 @@ body::after {
     pointer-events: none;
 }
 
+/* Live-graph loading + error hint, centred over the star band. */
+.graph-loading {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.95rem;
+    border: 1px solid var(--star-outline);
+    border-radius: 999px;
+    background: rgba(6, 8, 14, 0.55);
+    backdrop-filter: blur(4px);
+    color: var(--star-light);
+    font-family: 'Spectral', Georgia, serif;
+    font-style: italic;
+    font-size: 0.9rem;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+    z-index: 3;
+    animation: graph-loading-in 200ms ease both;
+}
+
+.graph-loading.is-error {
+    font-style: normal;
+    color: #e0967f;
+    border-color: rgba(224, 150, 127, 0.5);
+}
+
+.graph-loading-orbit {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1.5px solid var(--star-outline);
+    border-top-color: var(--star-glow);
+    animation: graph-spin 0.8s linear infinite;
+}
+
+@keyframes graph-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes graph-loading-in {
+    from { opacity: 0; transform: translate(-50%, -46%); }
+    to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
 .graph-svg {
     position: absolute;
     inset: 0;

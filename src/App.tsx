@@ -11,6 +11,7 @@ import {
 } from "./data/new-data/civilizations";
 import { STORY_MAP, storiesForCivilization } from "./data/new-data/stories";
 import { buildStoryFromText } from "./data/new-data/storyBuilder";
+import { buildLiveStory } from "./data/new-data/liveStore";
 import type { Story } from "./data/types";
 import { NODE_MAP } from "./data/new-data/graph";
 
@@ -131,15 +132,25 @@ export default function App() {
     },
     [getStory, startStory],
   );
-  // Build a story from free-typed text, register it, and play it. Returns false
-  // when nothing in the text matched a concept (so the menu can hint the user).
+  // Build a story from free-typed text, register it, and play it. Tries the
+  // local knowledge graph first; if nothing matches, falls back to a live
+  // internet story (Gemini-narrated) via the backend. Returns false only when
+  // neither could produce a path (so the menu can hint the user).
   const buildAndPlayStory = useCallback(
-    (text: string): boolean => {
-      const story = buildStoryFromText(text);
-      if (!story) return false;
-      setDynamicStories((prev) => ({ ...prev, [story.id]: story }));
-      startStory(story);
-      return true;
+    async (text: string): Promise<boolean> => {
+      const local = buildStoryFromText(text);
+      if (local) {
+        setDynamicStories((prev) => ({ ...prev, [local.id]: local }));
+        startStory(local);
+        return true;
+      }
+      const live = await buildLiveStory(text);
+      if (live) {
+        setDynamicStories((prev) => ({ ...prev, [live.id]: live }));
+        startStory(live);
+        return true;
+      }
+      return false;
     },
     [startStory],
   );

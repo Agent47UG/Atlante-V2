@@ -12,6 +12,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Civilization, Story, KnowledgeNode } from '../data/types';
 import { NODE_MAP, edgeBetween, pathBetween } from '../data/new-data/graph';
+import {
+    ensureNode,
+    bridgeCore,
+    subscribe as subscribeStore,
+    isLoading as isNodeLoading,
+    loadError as nodeLoadError,
+} from '../data/new-data/liveStore';
 import { CIVILIZATION_MAP } from '../data/new-data/civilizations';
 import { countryName } from '../lib/countries';
 import { formatYear as fmtYear } from '../data/new-data/timeline';
@@ -70,6 +77,19 @@ export default function GraphExplorer({
     onExitStory,
 }: GraphExplorerProps) {
     const [hoverId, setHoverId] = useState<string | null>(null);
+    // Bumped whenever the live store merges new nodes, so the memoised views
+    // recompute and freshly-fetched neighbours appear.
+    const [storeVersion, setStoreVersion] = useState(0);
+    useEffect(() => subscribeStore(() => setStoreVersion((v) => v + 1)), []);
+    // Fetch the focused node's neighbours on demand (no-op for core nodes).
+    useEffect(() => {
+        if (focusId) void ensureNode(focusId);
+    }, [focusId]);
+    // Opening a civilization grafts its live Wikidata frontier onto the root,
+    // turning the curated core into a doorway to the infinite graph.
+    useEffect(() => {
+        if (civ) void bridgeCore(civ.rootNodeId, civ.name);
+    }, [civ]);
     // Measure the sky band so we can lay out + render in real pixels (no
     // viewBox letterboxing that could push stars onto the globe).
     const canvasRef = useRef<HTMLDivElement>(null);
@@ -87,7 +107,8 @@ export default function GraphExplorer({
 
     const focusView = useMemo(
         () => (focusId && !activeStory ? buildFocusView(focusId, size.w, size.h) : null),
-        [focusId, activeStory, size.w, size.h],
+        // storeVersion: recompute when live neighbours arrive.
+        [focusId, activeStory, size.w, size.h, storeVersion],
     );
 
     const pathView = useMemo(
@@ -365,6 +386,17 @@ export default function GraphExplorer({
 
                     {/* ── Free exploration ────────────────────────────────── */}
                     <div className="graph-canvas" ref={canvasRef}>
+                    {focusId && isNodeLoading(focusId) && (
+                        <div className="graph-loading" aria-live="polite">
+                            <span className="graph-loading-orbit" aria-hidden="true" />
+                            Charting {focusNode?.label ?? 'the sky'}…
+                        </div>
+                    )}
+                    {focusId && !isNodeLoading(focusId) && nodeLoadError(focusId) && (
+                        <div className="graph-loading is-error" role="alert">
+                            Couldn’t reach the archive — try that star again.
+                        </div>
+                    )}
                     {renderView && (
                         <svg
                             className="graph-svg"

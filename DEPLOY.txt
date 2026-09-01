@@ -1,0 +1,163 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║  ATLANTE — DEPLOY STEPS (browser only, no CLI / no installs)               ║
+║  Live internet-fed knowledge graph + Gemini stories                        ║
+║  Written: 2026-09-01                                                        ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+Everything below is done from websites in your browser. You do the git push
+and the deploy — the agent never pushes. Your real secret values live in
+SETUP-FILL-ME.txt (keep that file uncommitted / gitignored).
+
+Stack recap:
+  • Frontend + API  : Cloudflare Pages (Functions in /functions)
+  • Database         : Turso (libSQL) — schema auto-creates on first request
+  • LLM narration    : Google Gemini (gemini-2.5-flash)
+  • Code host        : GitHub (repo: Atlante-V2)
+
+
+────────────────────────────────────────────────────────────────────────────
+STEP 0 — SANITY CHECK BEFORE YOU PUSH
+────────────────────────────────────────────────────────────────────────────
+  [ ] Confirm SETUP-FILL-ME.txt is listed in .gitignore (it is) so your
+      secrets are NOT uploaded.
+  [ ] Confirm .env / .dev.vars are also gitignored (they are).
+  [ ] npm install has already been run (deps present). Nothing to install.
+
+
+────────────────────────────────────────────────────────────────────────────
+STEP 1 — PUSH CODE TO GITHUB  (you do this)
+────────────────────────────────────────────────────────────────────────────
+  Option A (browser upload):
+    1. Go to https://github.com/Agent47UG/Atlante-V2
+    2. Upload the project files (drag & drop) EXCEPT:
+         - node_modules/
+         - dist/
+         - SETUP-FILL-ME.txt
+       (GitHub's uploader respects .gitignore only via git, so leave these
+        out manually when uploading through the website.)
+    3. Commit to the main branch.
+
+  Option B (git from your machine, if allowed):
+    git add .
+    git commit -m "Live internet-fed knowledge graph + Gemini stories"
+    git push origin main
+    (.gitignore already excludes secrets/node_modules/dist.)
+
+
+────────────────────────────────────────────────────────────────────────────
+STEP 2 — TURSO DATABASE  (already created; nothing to run)
+────────────────────────────────────────────────────────────────────────────
+  Your DB URL is in SETUP-FILL-ME.txt:
+      libsql://atlante-agent47ug.aws-ap-south-1.turso.io
+  The tables (nodes, edges) are created automatically the first time an API
+  call runs (ensureSchema). You do NOT need to run any SQL.
+
+  You need two values for Step 4:
+      TURSO_URL    = your libsql://... URL (above)
+      TURSO_TOKEN  = the auth token from https://app.turso.tech
+                     (Database → your DB → "Create Token" if you don't have it)
+
+
+────────────────────────────────────────────────────────────────────────────
+STEP 3 — CLOUDFLARE: CREATE THE KV NAMESPACE
+────────────────────────────────────────────────────────────────────────────
+  1. Go to https://dash.cloudflare.com  → Workers & Pages → KV.
+  2. Click "Create a namespace".
+  3. Name it:  ATLANTE_KV
+  4. Create. (You'll bind it to the site in Step 5.)
+
+
+────────────────────────────────────────────────────────────────────────────
+STEP 4 — CLOUDFLARE PAGES: CONNECT THE REPO
+────────────────────────────────────────────────────────────────────────────
+  1. Cloudflare dash → Workers & Pages → Create → Pages →
+     "Connect to Git".
+  2. Authorize GitHub, pick repo:  Agent47UG/Atlante-V2  (branch: main).
+  3. Build settings:
+         Framework preset      : Vite   (or "None")
+         Build command         : npm run build
+         Build output directory: dist
+         Root directory        : (leave blank / project root)
+  4. Do NOT deploy yet — first add the environment variables (Step 5).
+     (If it auto-deploys, that's fine; just re-deploy after Step 5.)
+
+
+────────────────────────────────────────────────────────────────────────────
+STEP 5 — CLOUDFLARE PAGES: ENVIRONMENT VARIABLES + KV BINDING
+────────────────────────────────────────────────────────────────────────────
+  In your Pages project → Settings → Environment variables
+  (add these to BOTH "Production" and "Preview"):
+
+      TURSO_URL      = libsql://atlante-agent47ug.aws-ap-south-1.turso.io
+      TURSO_TOKEN    = <your Turso token>          (mark as "Encrypt"/secret)
+      GEMINI_KEY     = <your Gemini API key>       (mark as "Encrypt"/secret)
+      GEMINI_MODEL   = gemini-2.5-flash
+
+  Then: Settings → Functions → KV namespace bindings → Add binding:
+      Variable name : ATLANTE_KV
+      KV namespace  : ATLANTE_KV   (the one from Step 3)
+
+  (Optional) If your frontend and API are on the same Pages domain you do NOT
+  need VITE_API_BASE — the client defaults to "/api". Only set VITE_API_BASE
+  if the API lives on a different origin.
+
+
+────────────────────────────────────────────────────────────────────────────
+STEP 6 — DEPLOY
+────────────────────────────────────────────────────────────────────────────
+  1. Pages project → Deployments → "Retry deployment" (or push a new commit
+     to main to trigger a fresh build).
+  2. Wait for the build to finish and open the *.pages.dev URL.
+
+
+────────────────────────────────────────────────────────────────────────────
+STEP 7 — SMOKE TEST (in the browser)
+────────────────────────────────────────────────────────────────────────────
+  Replace <site> with your pages.dev domain:
+
+    A. Node fetch:
+       https://<site>/api/node/Q935
+       → should return JSON with a node + neighbors (Q935 = "compass"-ish;
+         any valid Q-id works).
+
+    B. Search:
+       https://<site>/api/search?q=Isaac%20Newton
+       → should return { "id": "Q935", ... } style JSON with a Q-id.
+
+    C. In the app UI:
+       - Open a civilization → its root node should sprout extra "live"
+         neighbours after a moment. Click one, then keep clicking = infinite.
+       - Open Stories → type "gunpowder to the internet" → "Chart it".
+         It should resolve both concepts, build a path, and play a
+         Gemini-narrated story grounded on the nearest civilization.
+
+
+────────────────────────────────────────────────────────────────────────────
+STEP 8 — SEEDING (optional, do it whenever)
+────────────────────────────────────────────────────────────────────────────
+  "Seeding" is just using the app. Every node you open and every story you
+  build is fetched once from Wikidata, then saved to Turso (shared) + cached
+  in KV + your browser's IndexedDB. The more you (and later, other users)
+  explore, the faster and richer it gets. No separate seeding script needed.
+
+
+────────────────────────────────────────────────────────────────────────────
+TROUBLESHOOTING
+────────────────────────────────────────────────────────────────────────────
+  • /api/* returns 500 "TURSO..." → env vars missing/typo in Step 5.
+  • Stories never narrate (plain summaries only) → GEMINI_KEY wrong/rotated,
+    or model name not "gemini-2.5-flash". Captions still work as a fallback.
+  • Live neighbours never appear → open DevTools → Network → check /api/node/..
+    calls; a 404/500 points to the failing binding.
+  • First click on any concept is slow (~2–4s cold), then instant (cached).
+
+
+────────────────────────────────────────────────────────────────────────────
+SECURITY REMINDERS
+────────────────────────────────────────────────────────────────────────────
+  • Keep SETUP-FILL-ME.txt OUT of git (already gitignored).
+  • The Gemini key was written in plaintext during setup — ROTATE it in
+    Google AI Studio (https://aistudio.google.com/app/apikey) and update the
+    GEMINI_KEY var in Cloudflare (Step 5) after first deploy.
+  • Store TURSO_TOKEN and GEMINI_KEY as encrypted/secret vars in Cloudflare,
+    never in the repo.
