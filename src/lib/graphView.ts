@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NODE_MAP, neighborsOf, edgesOf } from '../data/new-data/graph';
+import { nodeOrder } from '../data/new-data/liveStore';
 import type { KnowledgeNode, NodeType } from '../data/types';
 
 /** Deterministic pseudo-random value in [0,1) from a string + salt. */
@@ -23,7 +24,7 @@ export function hashUnit(str: string, salt = 0): number {
 export const VIEW_W = 1000;
 export const VIEW_H = 640;
 /** How many nodes (besides the focus) we always try to show. */
-export const TARGET_NODES = 7;
+export const TARGET_NODES = 9;
 
 export interface Pt {
     x: number;
@@ -99,8 +100,14 @@ export function buildFocusView(focusId: string, w = VIEW_W, h = VIEW_H): FocusVi
                 candidates.push({ node, parentId: pid });
             }
         }
-        // Civilizations first, otherwise stable declaration order.
-        candidates.sort((a, b) => typeRank(a.node) - typeRank(b.node));
+        // Civilizations anchor the view; after that, freshly-discovered live
+        // nodes (higher discovery rank) come before the older curated core so
+        // the internet frontier surfaces instead of hiding in "+N more".
+        candidates.sort(
+            (a, b) =>
+                typeRank(a.node) - typeRank(b.node) ||
+                nodeOrder(b.node.id) - nodeOrder(a.node.id),
+        );
 
         const nextFrontier: string[] = [];
         for (const c of candidates) {

@@ -13,8 +13,7 @@ import type { CSSProperties } from 'react';
 import type { Civilization, Story, KnowledgeNode } from '../data/types';
 import { NODE_MAP, edgeBetween, pathBetween } from '../data/new-data/graph';
 import {
-    ensureNode,
-    bridgeCore,
+    expand,
     subscribe as subscribeStore,
     isLoading as isNodeLoading,
     loadError as nodeLoadError,
@@ -81,15 +80,11 @@ export default function GraphExplorer({
     // recompute and freshly-fetched neighbours appear.
     const [storeVersion, setStoreVersion] = useState(0);
     useEffect(() => subscribeStore(() => setStoreVersion((v) => v + 1)), []);
-    // Fetch the focused node's neighbours on demand (no-op for core nodes).
+    // Expanding ANY focused node fetches its neighbours from the internet
+    // (civilization seeds bridge via their label; live Q-nodes fetch directly).
     useEffect(() => {
-        if (focusId) void ensureNode(focusId);
+        if (focusId) void expand(focusId);
     }, [focusId]);
-    // Opening a civilization grafts its live Wikidata frontier onto the root,
-    // turning the curated core into a doorway to the infinite graph.
-    useEffect(() => {
-        if (civ) void bridgeCore(civ.rootNodeId, civ.name);
-    }, [civ]);
     // Measure the sky band so we can lay out + render in real pixels (no
     // viewBox letterboxing that could push stars onto the globe).
     const canvasRef = useRef<HTMLDivElement>(null);

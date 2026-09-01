@@ -65,6 +65,13 @@ const loadingSet = new Set<string>();
 const failed = new Map<string, string>();
 const listeners = new Set<() => void>();
 
+// Insertion order for nodes discovered live, so the explorer can surface the
+// freshest frontier first instead of burying it under the curated core.
+const orderById = new Map<string, number>();
+let orderSeq = 0;
+/** Discovery rank: 0 for the curated core, higher = more recently fetched. */
+export const nodeOrder = (id: string): number => orderById.get(id) ?? 0;
+
 /** A node id is "live" (fetched from Wikidata) iff it's a Q-id. */
 export const isLiveId = (id: string): boolean => /^Q\d+$/.test(id);
 
@@ -99,6 +106,7 @@ function addNode(w: WireNode | WireNeighbor, full: boolean): void {
     };
     NODE_MAP[w.id] = node;
     if (!ADJACENCY[w.id]) ADJACENCY[w.id] = [];
+    if (isLiveId(w.id)) orderById.set(w.id, ++orderSeq);
   } else if (full && summary && !existing.summary) {
     existing.summary = summary;
     if (era && !existing.details?.era) {
@@ -268,7 +276,36 @@ export async function bridgeCore(coreId: string, term: string): Promise<void> {
   }
 }
 
-// ── live stories (Gemini-narrated internet journeys) ────────────────────────
+/**
+ * Expand ANY node's neighbours on demand. Live (Q-id) nodes fetch directly;
+ * curated seed nodes (civilizations, slug ids) resolve their label to a
+ * Wikidata entity and graft its frontier on. This is what makes every click —
+ * not just opening a civilization — grow the graph.
+ */
+export async function expand(id: string): Promise<void> {
+  if (isLiveId(id)) return ensureNode(id);
+  const node = NODE_MAP[id];
+  if (node) await bridgeCore(id, node.label);
+}
+
+/**
+ * Warm every civilization's live neighbours in the background so the first
+ * time you open one it's already there. Gentle concurrency + a startup delay
+ * so we don't hammer the backend on load; everything is cached after first run.
+ */
+export async function prewarmCivilizations(delayMs = 1500): Promise<void> {
+  await new Promise((r) => setTimeout(r, delayMs));
+  const roots = CIVILIZATIONS.map((c) => ({ id: c.rootNodeId, name: c.name }));
+  const CONCURRENCY = 3;
+  let i = 0;
+  async function worker(): Promise<void> {
+    while (i < roots.length) {
+      const r = roots[i++];
+      await bridgeCore(r.id, r.name).catch(() => {});
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+}
 interface StoryResponse {
   id: string;
   question: string;

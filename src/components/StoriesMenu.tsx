@@ -2,14 +2,20 @@
 // StoriesMenu — build-your-own guided stories, opened from the nav.
 //
 // Type any concept(s) and a story is assembled live from the knowledge graph
-// (see storyBuilder). A few hand-authored stories are offered as suggestions,
-// and example prompts demonstrate the free-text engine.
+// via the backend. Example prompts demonstrate the free-text engine.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState } from 'react';
 import type { Story } from '../data/types';
 import { CIVILIZATION_MAP } from '../data/new-data/civilizations';
-import { STORY_PROMPT_EXAMPLES } from '../data/new-data/storyBuilder';
+
+/** Example prompts shown under the input to hint the free-text story engine. */
+const STORY_PROMPT_EXAMPLES = [
+    'How did zero become the computer?',
+    'gunpowder to the internet',
+    'silk road',
+    'democracy to the modern world',
+];
 
 interface StoriesMenuProps {
     open: boolean;

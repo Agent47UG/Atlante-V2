@@ -9,9 +9,7 @@ import {
   CIVILIZATION_MAP,
   activeCivilizations,
 } from "./data/new-data/civilizations";
-import { STORY_MAP, storiesForCivilization } from "./data/new-data/stories";
-import { buildStoryFromText } from "./data/new-data/storyBuilder";
-import { buildLiveStory } from "./data/new-data/liveStore";
+import { buildLiveStory, prewarmCivilizations } from "./data/new-data/liveStore";
 import type { Story } from "./data/types";
 import { NODE_MAP } from "./data/new-data/graph";
 
@@ -19,27 +17,12 @@ type Stage = "splash" | "moving" | "ready";
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-// A curated handful of hand-authored stories offered as suggestions beneath the
-// "build your own" box. The full set still resolves for playback via STORY_MAP.
-const SUGGESTED_STORY_IDS = [
-  "zero-to-computer",
-  "paper-to-print",
-  "compass-to-newworld",
-  "alphabet-to-internet",
-  "longship-to-moon",
-  "gold-to-algorithm",
-];
-const SUGGESTED_STORIES = SUGGESTED_STORY_IDS.map((id) => STORY_MAP[id]).filter(
-  Boolean,
-) as Story[];
-
 export default function App() {
   const [year, setYear] = useState(0);
   const [selectedCivId, setSelectedCivId] = useState<string | null>(null);
   const [focusStack, setFocusStack] = useState<string[]>([]);
   const [activeStory, setActiveStory] = useState<{ id: string; step: number } | null>(null);
-  // Stories the user builds by typing free text. Kept alongside the authored
-  // STORY_MAP so playback can resolve either kind by id.
+  // Stories the user builds by typing free text (resolved live via the backend).
   const [dynamicStories, setDynamicStories] = useState<Record<string, Story>>({});
   const [stage, setStage] = useState<Stage>("splash");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -86,17 +69,14 @@ export default function App() {
   const focusId = focusStack.length ? focusStack[focusStack.length - 1] : null;
   const prevFocusId =
     focusStack.length > 1 ? focusStack[focusStack.length - 2] : null;
-  const civStories = useMemo(
-    () => (selectedCiv ? storiesForCivilization(selectedCiv.id) : []),
-    [selectedCiv],
-  );
+  const civStories = useMemo<Story[]>(() => [], []);
   const getStory = useCallback(
-    (id: string): Story | undefined => dynamicStories[id] ?? STORY_MAP[id],
+    (id: string): Story | undefined => dynamicStories[id],
     [dynamicStories],
   );
   const resolvedStory = useMemo(() => {
     if (!activeStory) return null;
-    const story = dynamicStories[activeStory.id] ?? STORY_MAP[activeStory.id];
+    const story = dynamicStories[activeStory.id];
     return story ? { story, step: activeStory.step } : null;
   }, [activeStory, dynamicStories]);
   const activeCount = useMemo(() => activeCivilizations(year).length, [year]);
@@ -132,18 +112,11 @@ export default function App() {
     },
     [getStory, startStory],
   );
-  // Build a story from free-typed text, register it, and play it. Tries the
-  // local knowledge graph first; if nothing matches, falls back to a live
-  // internet story (Gemini-narrated) via the backend. Returns false only when
-  // neither could produce a path (so the menu can hint the user).
+  // Build a story from free-typed text via the live internet backend
+  // (Gemini-narrated), register it, and play it. Returns false when no path
+  // could be built (so the menu can hint the user).
   const buildAndPlayStory = useCallback(
     async (text: string): Promise<boolean> => {
-      const local = buildStoryFromText(text);
-      if (local) {
-        setDynamicStories((prev) => ({ ...prev, [local.id]: local }));
-        startStory(local);
-        return true;
-      }
       const live = await buildLiveStory(text);
       if (live) {
         setDynamicStories((prev) => ({ ...prev, [live.id]: live }));
@@ -156,12 +129,19 @@ export default function App() {
   );
   const storyStep = (delta: number) =>
     setActiveStory((a) => {
-      const story = a && (dynamicStories[a.id] ?? STORY_MAP[a.id]);
+      const story = a && dynamicStories[a.id];
       return a && story
         ? { id: a.id, step: clamp(a.step + delta, 0, story.steps.length - 1) }
         : a;
     });
   const exitStory = () => setActiveStory(null);
+
+  // Pre-warm each civilization's live neighbours in the background on load, so
+  // the first time one is opened it's already populated (and the shared cache
+  // fills up as people explore).
+  useEffect(() => {
+    void prewarmCivilizations();
+  }, []);
 
   // ── Intro animation (unchanged): FLIP the splash title into the nav. ────
   useLayoutEffect(() => {
@@ -454,7 +434,7 @@ export default function App() {
       />
       <StoriesMenu
         open={storiesOpen}
-        stories={SUGGESTED_STORIES}
+        stories={[]}
         onPlay={playStory}
         onBuild={buildAndPlayStory}
         onClose={() => setStoriesOpen(false)}
