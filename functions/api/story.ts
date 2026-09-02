@@ -35,10 +35,10 @@ export async function onRequestPost(ctx: Ctx): Promise<Response> {
     // Build a grounded path WITHOUT a deep graph walk. Resolving each node
     // triggers several Wikidata + Turso subrequests, and Cloudflare caps those
     // per invocation — a bidirectional BFS here reliably tripped "Too many
-    // subrequests". Instead we resolve just the two endpoints (reused for
-    // narration) and bridge them: a direct link, else a shared neighbour, else
-    // the bare leap. Every stop is still a real Wikidata entity, so the story
-    // stays fact-anchored; Gemini narrates the connective tissue.
+    // subrequests". So we bridge the two endpoints with a *bounded* search
+    // (≤3 extra node fetches) that still surfaces one or two real in-between
+    // stops. Every stop is a real Wikidata entity, so the story stays
+    // fact-anchored; Gemini narrates the connective tissue.
     const [nf, nt] = await Promise.all([
       resolveNode(ctx.env, from),
       resolveNode(ctx.env, to),
@@ -47,27 +47,95 @@ export async function onRequestPost(ctx: Ctx): Promise<Response> {
       [from, nf],
       [to, nt],
     ]);
-
-    let path: string[];
-    if (nf.neighbors.some((n) => n.id === to)) {
-      path = [from, to];
-    } else {
-      const fromSet = new Set(nf.neighbors.map((n) => n.id));
-      const bridge = nt.neighbors.find((n) => fromSet.has(n.id));
-      path = bridge ? [from, bridge.id, to] : [from, to];
-    }
-
-    // Resolve every node on the path (for summaries + neighbour verbs), reusing
-    // the endpoints already fetched so only the bridge (if any) costs extra.
-    const resolved: NodeResponse[] = [];
-    for (const id of path) {
+    const isQ = (id: string) => /^Q\d+$/.test(id);
+    const get = async (id: string): Promise<NodeResponse> => {
       let r = resolvedById.get(id);
       if (!r) {
         r = await resolveNode(ctx.env, id);
         resolvedById.set(id, r);
       }
-      resolved.push(r);
+      return r;
+    };
+
+    // Entities reachable one hop from `to` (plus `to` itself) — used to detect
+    // where a path from `from`'s side lands.
+    const toSide = new Set<string>([to, ...nt.neighbors.map((n) => n.id)]);
+    const fromSet = new Set(nf.neighbors.map((n) => n.id));
+
+    let path: string[] | null = null;
+
+    // 1. Direct link.
+    if (fromSet.has(to)) path = [from, to];
+
+    // 2. A single node that both endpoints touch (one intermediate).
+    if (!path) {
+      const shared = nf.neighbors.find((n) => n.id !== to && toSide.has(n.id));
+      if (shared) path = [from, shared.id, to];
     }
+
+    // 3. Bounded expansion: walk a few of `from`'s most notable neighbours one
+    //    hop further, looking for a link into `to`'s side (one or two stops).
+    if (!path) {
+      const candidates = nf.neighbors
+        .filter((n) => isQ(n.id) && n.id !== to)
+        .slice(0, 3);
+      for (const fn of candidates) {
+        const r = await get(fn.id);
+        if (r.neighbors.some((n) => n.id === to)) {
+          path = [from, fn.id, to];
+          break;
+        }
+        const mid = r.neighbors.find(
+          (n) => n.id !== from && n.id !== to && n.id !== fn.id && toSide.has(n.id),
+        );
+        if (mid) {
+          path = mid.id === to ? [from, fn.id, to] : [from, fn.id, mid.id, to];
+          break;
+        }
+      }
+    }
+
+    // 4. Nothing connected — start from the bare leap and let the top-up below
+    //    fill in real stops.
+    if (!path) path = [from, to];
+
+    // Drop any accidental repeats while preserving order.
+    path = path.filter((id, i) => path!.indexOf(id) === i);
+
+    // 5. Guarantee a minimum of MIN_STOPS nodes so a story is never a short
+    //    two- or three-node leap. We pad with real, notable neighbours of the
+    //    stops already on the path (from→stop edges stay real; Gemini narrates
+    //    the rest). Filler is inserted just before `to`.
+    const MIN_STOPS = 4;
+    if (path.length < MIN_STOPS) {
+      const inPath = new Set(path);
+      // Pull filler from the from-side first, then anything already resolved,
+      // then the to-side — all real Wikidata entities.
+      const pool: string[] = [];
+      const push = (ids: string[]) => {
+        for (const id of ids) {
+          if (isQ(id) && !inPath.has(id) && !pool.includes(id)) pool.push(id);
+        }
+      };
+      push(nf.neighbors.map((n) => n.id));
+      for (const id of [...path]) {
+        const r = resolvedById.get(id);
+        if (r) push(r.neighbors.map((n) => n.id));
+      }
+      push(nt.neighbors.map((n) => n.id));
+
+      const insertAt = path.length - 1; // just before `to`
+      let i = 0;
+      while (path.length < MIN_STOPS && i < pool.length) {
+        path.splice(insertAt + i, 0, pool[i]);
+        i++;
+      }
+    }
+
+    // Resolve every node on the path (for summaries + neighbour verbs), reusing
+    // anything already fetched above so only new stops cost extra.
+    const resolved: NodeResponse[] = [];
+    for (const id of path) resolved.push(await get(id));
 
     const nodes: WireNode[] = resolved.map((r) => r.node);
     const verbBetween = (prev: NodeResponse, curId: string): string | undefined =>

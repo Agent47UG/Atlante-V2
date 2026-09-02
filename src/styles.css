@@ -731,6 +731,7 @@ body::after {
     line-height: 1.08;
     color: var(--paper);
     text-shadow: 0 1px 10px rgba(0, 0, 0, 0.55);
+    text-transform: capitalize;
 }
 
 .event-panel-desc {
@@ -987,6 +988,10 @@ body::after {
     font-size: 10.5px;
     font-style: italic;
     text-anchor: middle;
+    /* Hold every connecting label back until its line has finished drawing
+       (560ms), then fade it in gently. */
+    opacity: 0;
+    animation: graphEdgeLabelIn 300ms ease 560ms forwards;
 }
 
 /* During a branch, hold the connecting text back until its line has drawn. */
