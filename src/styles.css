@@ -989,6 +989,16 @@ body::after {
     text-anchor: middle;
 }
 
+/* During a branch, hold the connecting text back until its line has drawn. */
+.graph-edge-label.is-fresh {
+    opacity: 0;
+    animation: graphEdgeLabelIn 300ms ease 560ms forwards;
+}
+
+@keyframes graphEdgeLabelIn {
+    to { opacity: 1; }
+}
+
 .graph-edge-line {
     stroke-width: 1.5;
 }
@@ -1101,6 +1111,7 @@ body::after {
     fill: rgba(240, 235, 222, 0.94);
     font-family: 'Cormorant Garamond', 'Times New Roman', serif;
     font-size: 12px;
+    text-transform: capitalize;
     paint-order: stroke;
     stroke: rgba(20, 18, 14, 0.6);
     stroke-width: 3px;

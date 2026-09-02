@@ -370,9 +370,12 @@ export async function fetchWikidataNode(qid: string): Promise<FetchedNode> {
     if (neighbors.length >= MAX_NEIGHBORS) break;
   }
 
-  // Dead-end rescue: if nothing structured was found, fall back to any notable
-  // entity that references this one, so a node is never left with no threads.
-  if (neighbors.length === 0) {
+  // Dead-end / thin rescue: hub entities (kingdoms, cultures) often expose only
+  // a handful of whitelisted + incoming relations, yet plenty of notable things
+  // reference them (rulers, cities, artefacts). When the structured passes come
+  // back thin, top up from the loose "anything notable that links here" query so
+  // these civilizations read rich instead of near-empty.
+  if (neighbors.length < 4) {
     for (const n of await fetchLooseNeighbors(qid)) {
       if (seen.has(n.id) || n.id === qid) continue;
       seen.add(n.id);

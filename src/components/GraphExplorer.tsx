@@ -416,7 +416,13 @@ export default function GraphExplorer({
                                                     style={{ ['--edge-len']: `${len}` } as CSSProperties}
                                                 />
                                                 {e.label && active && phase !== 'collapse' && (
-                                                    <text x={mx} y={my - 4} className="graph-edge-label">
+                                                    <text
+                                                        x={mx}
+                                                        y={my - 4}
+                                                        className={`graph-edge-label${
+                                                            phase === 'branch' ? ' is-fresh' : ''
+                                                        }`}
+                                                    >
                                                         {e.label}
                                                     </text>
                                                 )}

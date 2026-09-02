@@ -323,11 +323,27 @@ interface StoryResponse {
   nodes: WireNode[];
 }
 
+/**
+ * Strip question scaffolding and filler so a phrase like "How did zero" or
+ * "the modern world" reduces to the concept a Wikidata search can actually
+ * resolve ("zero", "modern world").
+ */
+function cleanConcept(s: string): string {
+  let t = s.trim().replace(/[?.!]+$/, '').trim();
+  const FILLER = /^(how|why|what|when|where|who|which|did|do|does|was|were|is|are|has|have|the|a|an|of|about)\s+/i;
+  let prev: string;
+  do {
+    prev = t;
+    t = t.replace(FILLER, '').trim();
+  } while (t !== prev && t.length > 0);
+  return t || s.trim();
+}
+
 /** Split "gunpowder to the internet" into its two endpoint concepts. */
 function splitConcepts(text: string): [string, string] | null {
   const parts = text
-    .split(/\s*(?:->|→|\bto\b|\bthen\b|\binto\b|\band\b|,)\s*/i)
-    .map((s) => s.trim())
+    .split(/\s*(?:->|→|\bbec[ao]mes?\b|\bto\b|\bthen\b|\binto\b|\bfrom\b|\band\b|,)\s*/i)
+    .map((s) => cleanConcept(s))
     .filter(Boolean);
   if (parts.length < 2) return null;
   return [parts[0], parts[parts.length - 1]];
@@ -371,7 +387,7 @@ export async function buildLiveStory(text: string): Promise<Story | null> {
     [from, to] = await Promise.all([resolveTerm(pair[0]), resolveTerm(pair[1])]);
   } else {
     // Single concept: anchor on it, then journey to its most notable neighbour.
-    from = await resolveTerm(text.trim());
+    from = await resolveTerm(cleanConcept(text));
     to = null;
     if (from) {
       const node = await fetchNode(from).catch(() => null);
