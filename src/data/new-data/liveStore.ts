@@ -153,14 +153,23 @@ function merge(data: NodeResponse): void {
 // ── IndexedDB (raw, no dependency) ─────────────────────────────────────────
 const DB_NAME = 'atlante';
 const STORE = 'nodes';
+// Bump when the node/neighbour shape or backend logic changes so stale client
+// caches are dropped on next load — otherwise a node cached empty/failed under
+// old code keeps being served from the browser and never re-fetches.
+const DB_VERSION = 2;
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 
 function openDB(): Promise<IDBDatabase | null> {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve) => {
     if (typeof indexedDB === 'undefined') return resolve(null);
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      // Drop any prior cache so an upgraded client always starts clean.
+      if (db.objectStoreNames.contains(STORE)) db.deleteObjectStore(STORE);
+      db.createObjectStore(STORE);
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => resolve(null);
   });
@@ -191,7 +200,10 @@ async function idbPut(id: string, data: NodeResponse): Promise<void> {
 
 // ── the public API ─────────────────────────────────────────────────────────
 async function fetchNode(id: string): Promise<NodeResponse> {
-  const res = await fetch(`${API_BASE}/node/${id}`);
+  // Bypass the browser HTTP cache: IndexedDB is already our client-side cache,
+  // and Turso is the shared server cache. Letting the browser also cache the
+  // /api response (Cache-Control: max-age) pinned stale/empty nodes for a day.
+  const res = await fetch(`${API_BASE}/node/${id}`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json();
 }

@@ -15,7 +15,17 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   }
   try {
     const payload = await resolveNode(ctx.env, id, ctx.waitUntil);
-    return json(payload);
+    // Cache rich results hard (they rarely change and offload the worker), but
+    // only briefly cache thin/empty ones — otherwise a transiently empty node
+    // gets pinned at the browser/CDN edge for a day and never self-heals.
+    const rich = (payload.neighbors?.length ?? 0) >= 3;
+    return json(payload, {
+      headers: {
+        'Cache-Control': rich
+          ? 'public, max-age=86400'
+          : 'public, max-age=120',
+      },
+    });
   } catch (err: any) {
     return errorJson(`Failed to resolve ${id}: ${err?.message ?? err}`, 502);
   }
