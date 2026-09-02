@@ -381,12 +381,6 @@ export default function GraphExplorer({
 
                     {/* ── Free exploration ────────────────────────────────── */}
                     <div className="graph-canvas" ref={canvasRef}>
-                    {focusId && isNodeLoading(focusId) && (
-                        <div className="graph-loading" aria-live="polite">
-                            <span className="graph-loading-orbit" aria-hidden="true" />
-                            Charting {focusNode?.label ?? 'the sky'}…
-                        </div>
-                    )}
                     {focusId && !isNodeLoading(focusId) && nodeLoadError(focusId) && (
                         <div className="graph-loading is-error" role="alert">
                             Couldn’t reach the archive — try that star again.
@@ -481,6 +475,24 @@ export default function GraphExplorer({
                                     );
                                 })}
                             </g>
+
+                            {/* Loading: a circular loader spinning around the
+                                centre node while its neighbours are fetched. */}
+                            {(() => {
+                                if (!focusId || !isNodeLoading(focusId)) return null;
+                                const fp = renderView.nodes.find((n) => n.isFocus);
+                                if (!fp) return null;
+                                return (
+                                    <g
+                                        className="graph-loader"
+                                        style={{ transform: `translate(${fp.x}px, ${fp.y}px)` }}
+                                        aria-hidden="true"
+                                    >
+                                        <circle className="graph-loader-track" r={24} />
+                                        <circle className="graph-loader-ring" r={24} />
+                                    </g>
+                                );
+                            })()}
 
                             {renderView.hiddenCount > 0 && phase !== 'collapse' && (
                                 <text

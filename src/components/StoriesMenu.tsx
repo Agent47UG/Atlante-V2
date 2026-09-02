@@ -115,6 +115,16 @@ export default function StoriesMenu({ open, stories, onPlay, onBuild, onClose }:
                                 {busy ? 'Charting…' : 'Chart it'}
                             </button>
                         </div>
+                        {busy && (
+                            <p className="stories-loading" role="status" aria-live="polite">
+                                Charting your story
+                                <span className="stories-dots" aria-hidden="true">
+                                    <span />
+                                    <span />
+                                    <span />
+                                </span>
+                            </p>
+                        )}
                         {error && (
                             <p className="stories-error" role="alert">
                                 Couldn’t find that in the atlas. Try naming a person, place, or invention —
