@@ -4,8 +4,8 @@
 import { resolveNode } from './resolve';
 import type { Env, WireNeighbor } from './types';
 
-const MAX_EXPANSIONS = 24; // total node fetches before giving up
-const MAX_DEPTH = 6;
+const MAX_EXPANSIONS = 10; // total node fetches before giving up (subrequest cap)
+const MAX_DEPTH = 4;
 
 interface Frontier {
   queue: string[];

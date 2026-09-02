@@ -79,10 +79,19 @@ function parseYear(time: string | undefined): number | undefined {
   return m[1] === '-' ? -year : year;
 }
 
-async function getJSON(url: string): Promise<any> {
-  const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`fetch ${url} -> ${res.status}`);
-  return res.json();
+async function getJSON(url: string, timeoutMs = 9000): Promise<any> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': UA, Accept: 'application/json' },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`fetch ${url} -> ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 interface RawNeighbor {
@@ -173,7 +182,12 @@ async function enrichNeighbors(
   const url =
     'https://query.wikidata.org/sparql?format=json&query=' +
     encodeURIComponent(query);
-  const data = await getJSON(url);
+  let data: any;
+  try {
+    data = await getJSON(url);
+  } catch {
+    return []; // SPARQL slow/rate-limited — degrade to no outgoing neighbours.
+  }
 
   const seen = new Set<string>();
   const result: WireNeighbor[] = [];

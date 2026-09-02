@@ -11,6 +11,7 @@ import { createClient, type Client } from '@libsql/client';
 import type { Env, FetchedNode, WireNeighbor, WireNode } from './types';
 
 let cached: Client | null = null;
+let schemaReady = false;
 
 export function db(env: Env): Client {
   if (!cached) {
@@ -19,8 +20,14 @@ export function db(env: Env): Client {
   return cached;
 }
 
-/** Create tables if they don't exist. Safe to call on every request. */
+/**
+ * Create tables if they don't exist. Memoised per Worker isolate so it fires a
+ * single Turso write per cold start instead of one on every resolveNode — deep
+ * flows (stories, pathfinding) otherwise burned through Cloudflare's
+ * per-invocation subrequest budget just re-ensuring the schema.
+ */
 export async function ensureSchema(client: Client): Promise<void> {
+  if (schemaReady) return;
   await client.batch(
     [
       `CREATE TABLE IF NOT EXISTS nodes (
@@ -48,6 +55,7 @@ export async function ensureSchema(client: Client): Promise<void> {
     ],
     'write',
   );
+  schemaReady = true;
 }
 
 function rowToNode(row: any): WireNode {

@@ -2,7 +2,6 @@
 // Builds a real graph path, then narrates it with Gemini (falling back to each
 // node's own summary). Returns a playable story + the nodes it touches.
 
-import { findPath } from './_lib/pathfind';
 import { resolveNode } from './_lib/resolve';
 import { narratePath } from './_lib/gemini';
 import { CORS, errorJson, json, type Ctx } from './_lib/http';
@@ -33,24 +32,42 @@ export async function onRequestPost(ctx: Ctx): Promise<Response> {
   }
 
   try {
-    // Prefer a real, walkable graph path (fully grounded). If the sparse graph
-    // can't connect the two concepts, fall back to a shared-neighbour bridge,
-    // then finally to the bare endpoints — Gemini narrates the leap. Either way
-    // every stop is a real Wikidata entity, so the story stays fact-anchored.
-    let path = await findPath(ctx.env, from, to);
-    if (!path || path.length === 0) {
-      const [nf, nt] = await Promise.all([
-        resolveNode(ctx.env, from),
-        resolveNode(ctx.env, to),
-      ]);
-      const fromNeighbors = new Set(nf.neighbors.map((n) => n.id));
-      const bridge = nt.neighbors.find((n) => fromNeighbors.has(n.id));
+    // Build a grounded path WITHOUT a deep graph walk. Resolving each node
+    // triggers several Wikidata + Turso subrequests, and Cloudflare caps those
+    // per invocation — a bidirectional BFS here reliably tripped "Too many
+    // subrequests". Instead we resolve just the two endpoints (reused for
+    // narration) and bridge them: a direct link, else a shared neighbour, else
+    // the bare leap. Every stop is still a real Wikidata entity, so the story
+    // stays fact-anchored; Gemini narrates the connective tissue.
+    const [nf, nt] = await Promise.all([
+      resolveNode(ctx.env, from),
+      resolveNode(ctx.env, to),
+    ]);
+    const resolvedById = new Map<string, NodeResponse>([
+      [from, nf],
+      [to, nt],
+    ]);
+
+    let path: string[];
+    if (nf.neighbors.some((n) => n.id === to)) {
+      path = [from, to];
+    } else {
+      const fromSet = new Set(nf.neighbors.map((n) => n.id));
+      const bridge = nt.neighbors.find((n) => fromSet.has(n.id));
       path = bridge ? [from, bridge.id, to] : [from, to];
     }
 
-    // Resolve every node on the path (for summaries + neighbour verbs).
+    // Resolve every node on the path (for summaries + neighbour verbs), reusing
+    // the endpoints already fetched so only the bridge (if any) costs extra.
     const resolved: NodeResponse[] = [];
-    for (const id of path) resolved.push(await resolveNode(ctx.env, id));
+    for (const id of path) {
+      let r = resolvedById.get(id);
+      if (!r) {
+        r = await resolveNode(ctx.env, id);
+        resolvedById.set(id, r);
+      }
+      resolved.push(r);
+    }
 
     const nodes: WireNode[] = resolved.map((r) => r.node);
     const verbBetween = (prev: NodeResponse, curId: string): string | undefined =>
