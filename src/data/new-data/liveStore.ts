@@ -201,7 +201,7 @@ async function fetchNode(id: string): Promise<NodeResponse> {
  * expanded nodes. Fetches from IndexedDB first, then the backend, merges the
  * result, then quietly prefetches a couple of neighbours for the next click.
  */
-export async function ensureNode(id: string): Promise<void> {
+export async function ensureNode(id: string, cascade = true): Promise<void> {
   if (isExpanded(id) || loadingSet.has(id)) return;
   loadingSet.add(id);
   failed.delete(id);
@@ -215,7 +215,7 @@ export async function ensureNode(id: string): Promise<void> {
     merge(data);
     expanded.add(id);
     emit();
-    prefetch(data);
+    if (cascade) prefetch(data);
   } catch (err: any) {
     failed.set(id, err?.message ?? 'Failed to load');
     emit();
@@ -230,7 +230,10 @@ function prefetch(data: NodeResponse): void {
     .filter((n) => isLiveId(n.id) && !isExpanded(n.id))
     .slice(0, PREFETCH_COUNT);
   for (const n of targets) {
-    window.setTimeout(() => void ensureNode(n.id).catch(() => {}), 400);
+    // Warm one hop only — prefetched neighbours must NOT cascade, or a single
+    // click/prewarm fans out into hundreds of /api/node fetches (crawling the
+    // whole neighbourhood), overwhelming the worker and rate-limiting Wikidata.
+    window.setTimeout(() => void ensureNode(n.id, false).catch(() => {}), 400);
   }
 }
 
