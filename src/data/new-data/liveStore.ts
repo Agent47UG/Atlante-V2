@@ -15,7 +15,7 @@
 import type { KnowledgeNode, KnowledgeEdge, NodeType, Story } from '../types';
 import { NODE_MAP, ADJACENCY, EDGES } from './graph';
 import { formatYear } from './timeline';
-import { CIVILIZATIONS } from './civilizations';
+import { CIVILIZATIONS, CIVILIZATION_MAP } from './civilizations';
 
 const API_BASE =
   (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') ?? '/api';
@@ -42,6 +42,7 @@ interface WireNeighbor {
   year?: number;
   rel: string;
   dir: 'in' | 'out';
+  desc?: string;
 }
 interface WireNode {
   id: string;
@@ -93,13 +94,17 @@ function addNode(w: WireNode | WireNeighbor, full: boolean): void {
   const existing = NODE_MAP[w.id];
   const era = w.year !== undefined ? formatYear(w.year) : undefined;
   const summary = (w as WireNode).summary ?? '';
+  const desc = (w as WireNeighbor).desc ?? '';
   const image = (w as WireNode).image;
+  // A neighbour stub carries a one-line description; a full node carries a rich
+  // summary. Either is enough to make the info panel read richly on first sight.
+  const initialText = full ? summary || desc : desc;
   if (!existing) {
     const node: KnowledgeNode = {
       id: w.id,
       label: w.label,
       type: w.type,
-      summary: full ? summary : '',
+      summary: initialText,
       details: era || (w as WireNode).glyph
         ? { era, glyph: (w as WireNode).glyph }
         : undefined,
@@ -107,8 +112,10 @@ function addNode(w: WireNode | WireNeighbor, full: boolean): void {
     NODE_MAP[w.id] = node;
     if (!ADJACENCY[w.id]) ADJACENCY[w.id] = [];
     if (isLiveId(w.id)) orderById.set(w.id, ++orderSeq);
-  } else if (full && summary && !existing.summary) {
-    existing.summary = summary;
+  } else {
+    // Upgrade a thin summary when a richer one (or any at all) arrives.
+    if (full && summary && existing.summary !== summary) existing.summary = summary;
+    else if (!existing.summary && initialText) existing.summary = initialText;
     if (era && !existing.details?.era) {
       existing.details = { ...existing.details, era };
     }
@@ -247,13 +254,13 @@ export async function resolveTerm(term: string): Promise<string | null> {
  * node, so opening a civilization's root also opens a door into the infinite
  * graph. Idempotent per core id.
  */
-export async function bridgeCore(coreId: string, term: string): Promise<void> {
+export async function bridgeCore(coreId: string, term: string, pinnedQid?: string): Promise<void> {
   if (bridged.has(coreId) || loadingSet.has(coreId)) return;
   bridged.add(coreId);
   loadingSet.add(coreId);
   emit();
   try {
-    const qid = await resolveTerm(term);
+    const qid = pinnedQid ?? (await resolveTerm(term));
     if (!qid) return;
     let data = await idbGet(qid);
     if (!data) {
@@ -285,7 +292,10 @@ export async function bridgeCore(coreId: string, term: string): Promise<void> {
 export async function expand(id: string): Promise<void> {
   if (isLiveId(id)) return ensureNode(id);
   const node = NODE_MAP[id];
-  if (node) await bridgeCore(id, node.label);
+  if (node) {
+    const civ = node.civilizationId ? CIVILIZATION_MAP[node.civilizationId] : undefined;
+    await bridgeCore(id, node.label, civ?.wikidataId);
+  }
 }
 
 /**
@@ -295,13 +305,13 @@ export async function expand(id: string): Promise<void> {
  */
 export async function prewarmCivilizations(delayMs = 1500): Promise<void> {
   await new Promise((r) => setTimeout(r, delayMs));
-  const roots = CIVILIZATIONS.map((c) => ({ id: c.rootNodeId, name: c.name }));
+  const roots = CIVILIZATIONS.map((c) => ({ id: c.rootNodeId, name: c.name, qid: c.wikidataId }));
   const CONCURRENCY = 3;
   let i = 0;
   async function worker(): Promise<void> {
     while (i < roots.length) {
       const r = roots[i++];
-      await bridgeCore(r.id, r.name).catch(() => {});
+      await bridgeCore(r.id, r.name, r.qid).catch(() => {});
     }
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
@@ -355,8 +365,19 @@ function nearestCiv(lat?: number, lon?: number): string {
  */
 export async function buildLiveStory(text: string): Promise<Story | null> {
   const pair = splitConcepts(text);
-  if (!pair) return null;
-  const [from, to] = await Promise.all([resolveTerm(pair[0]), resolveTerm(pair[1])]);
+  let from: string | null;
+  let to: string | null;
+  if (pair) {
+    [from, to] = await Promise.all([resolveTerm(pair[0]), resolveTerm(pair[1])]);
+  } else {
+    // Single concept: anchor on it, then journey to its most notable neighbour.
+    from = await resolveTerm(text.trim());
+    to = null;
+    if (from) {
+      const node = await fetchNode(from).catch(() => null);
+      to = node?.neighbors?.find((n) => n.id !== from)?.id ?? null;
+    }
+  }
   if (!from || !to || from === to) return null;
 
   let data: StoryResponse;

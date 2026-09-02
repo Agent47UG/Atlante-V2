@@ -14,6 +14,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#d8b46a',
         periods: [{ start: -3500, end: -539 }],
         rootNodeId: 'mesopotamia',
+        wikidataId: 'Q11767',
         blurb: 'Between two rivers, humanity wrote its first words.',
     },
     {
@@ -25,6 +26,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#e8c86a',
         periods: [{ start: -3000, end: -30 }],
         rootNodeId: 'egypt',
+        wikidataId: 'Q11768',
         blurb: 'A civilization of pyramids, gods, and eternal stone.',
     },
     {
@@ -36,6 +38,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#7ec8ff',
         periods: [{ start: -800, end: -146 }],
         rootNodeId: 'greece',
+        wikidataId: 'Q11772',
         blurb: 'Philosophy, democracy, and the measure of all things.',
     },
     {
@@ -47,6 +50,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#ff9a5c',
         periods: [{ start: -550, end: 651 }],
         rootNodeId: 'persia',
+        wikidataId: 'Q389688',
         blurb: 'The first empire to span three continents.',
     },
     {
@@ -58,6 +62,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#ffb74d',
         periods: [{ start: -1500, end: 1200 }],
         rootNodeId: 'india',
+        wikidataId: 'Q133136',
         blurb: 'Where numbers found nothing, and nothing became everything.',
     },
     {
@@ -69,6 +74,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#ef5a6f',
         periods: [{ start: -1600, end: 1912 }],
         rootNodeId: 'china',
+        wikidataId: 'Q82972',
         blurb: 'Paper, powder, and the compass that turned the world.',
     },
     {
@@ -80,6 +86,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#e0533d',
         periods: [{ start: -509, end: 476 }],
         rootNodeId: 'rome',
+        wikidataId: 'Q2277',
         blurb: 'Roads, law, and legions that bound a world together.',
     },
     {
@@ -91,6 +98,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#63d4a0',
         periods: [{ start: 750, end: 1258 }],
         rootNodeId: 'islamic-golden-age',
+        wikidataId: 'Q745799',
         blurb: 'Baghdad translated the world and invented the algorithm.',
     },
     {
@@ -102,6 +110,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#d9b96b',
         periods: [{ start: 1300, end: 1600 }],
         rootNodeId: 'renaissance',
+        wikidataId: 'Q1404472',
         blurb: 'Art and science awaken from a thousand-year sleep.',
     },
     {
@@ -113,6 +122,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#6bd39a',
         periods: [{ start: 1299, end: 1922 }],
         rootNodeId: 'ottoman',
+        wikidataId: 'Q12560',
         blurb: 'Three continents ruled from a city of two seas.',
     },
     {
@@ -124,6 +134,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#ffcf6b',
         periods: [{ start: 1492, end: 1898 }],
         rootNodeId: 'spain',
+        wikidataId: 'Q80702',
         blurb: 'Caravels crossed the ocean and redrew the map of Earth.',
     },
     {
@@ -135,6 +146,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#9fd6a0',
         periods: [{ start: 1760, end: 1900 }],
         rootNodeId: 'industrial-britain',
+        wikidataId: 'Q2269',
         blurb: 'Steam and steel forged the modern world.',
     },
     {
@@ -146,6 +158,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#a9b4ff',
         periods: [{ start: 1871, end: 1945 }],
         rootNodeId: 'germany',
+        wikidataId: 'Q43287',
         blurb: 'Where physics bent space, time, and the century itself.',
     },
     {
@@ -157,6 +170,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#7ee0d3',
         periods: [{ start: 1900, end: 2100 }],
         rootNodeId: 'modern-computing',
+        wikidataId: 'Q956129',
         blurb: 'Logic became lightning, and machines began to think.',
     },
     {
@@ -168,6 +182,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#c49bcc',
         periods: [{ start: 330, end: 1453 }],
         rootNodeId: 'byzantine',
+        wikidataId: 'Q12544',
         blurb: 'For a thousand years, Constantinople held the flame of Rome alive.',
     },
     {
@@ -179,6 +194,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#7ec0d8',
         periods: [{ start: 793, end: 1066 }],
         rootNodeId: 'viking',
+        wikidataId: 'Q213649',
         blurb: 'Dragons prow first into the unknown — from Baghdad to Vinland.',
     },
     {
@@ -190,6 +206,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#f4a5b0',
         periods: [{ start: 794, end: 1868 }],
         rootNodeId: 'medieval-japan',
+        wikidataId: 'Q130436',
         blurb: 'In silence and steel, a civilisation refined itself to perfection.',
     },
     {
@@ -201,6 +218,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#c8b46a',
         periods: [{ start: 1206, end: 1368 }],
         rootNodeId: 'mongol',
+        wikidataId: 'Q12557',
         blurb: 'From the steppe, one people knit the world into a single empire.',
     },
     {
@@ -212,6 +230,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#f4c46a',
         periods: [{ start: 1235, end: 1600 }],
         rootNodeId: 'mali',
+        wikidataId: 'Q184536',
         blurb: 'Where gold met salt, and Timbuktu became the city of books.',
     },
     {
@@ -223,6 +242,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#e07040',
         periods: [{ start: 1345, end: 1521 }],
         rootNodeId: 'aztec',
+        wikidataId: 'Q2608489',
         blurb: 'On a lake, they built a city; for the sun, they fed the sky.',
     },
     {
@@ -234,6 +254,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#6bbf8a',
         periods: [{ start: -2000, end: 1500 }],
         rootNodeId: 'maya',
+        wikidataId: 'Q28567',
         blurb: 'In the rainforest they wrote in stars, stone, and silence.',
     },
     {
@@ -245,6 +266,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#d4a843',
         periods: [{ start: 1438, end: 1572 }],
         rootNodeId: 'inca',
+        wikidataId: 'Q28573',
         blurb: 'Without writing or wheels, they built an empire in the clouds.',
     },
     {
@@ -256,6 +278,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#8fbf7f',
         periods: [{ start: 1526, end: 1857 }],
         rootNodeId: 'mughal',
+        wikidataId: 'Q33296',
         blurb: 'From Babur\'s sword to Akbar\'s tolerance, an empire of marble and verse.',
     },
     {
@@ -267,6 +290,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#9b6ecc',
         periods: [{ start: -1500, end: -300 }],
         rootNodeId: 'phoenicia',
+        wikidataId: 'Q41642',
         blurb: 'They gave the world its letters and sailed to the edge of the sea.',
     },
     {
@@ -278,6 +302,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#6ab0d6',
         periods: [{ start: -57, end: 1897 }],
         rootNodeId: 'korea',
+        wikidataId: 'Q28405',
         blurb: 'Between giants, Korea forged a language, a press, and an identity of its own.',
     },
     {
@@ -289,6 +314,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#c9a25e',
         periods: [{ start: -3300, end: -1300 }],
         rootNodeId: 'indus',
+        wikidataId: 'Q42534',
         blurb: 'Grid-planned cities and hidden drains, from a script we still cannot read.',
     },
     {
@@ -300,6 +326,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#c77f4d',
         periods: [{ start: -100, end: 940 }],
         rootNodeId: 'aksum',
+        wikidataId: 'Q139377',
         blurb: 'An African trading empire that minted its own coins and raised towering stelae.',
     },
     {
@@ -311,6 +338,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#7fae7a',
         periods: [{ start: 802, end: 1431 }],
         rootNodeId: 'khmer',
+        wikidataId: 'Q201705',
         blurb: 'Water engineers of the jungle who built the largest temple on Earth.',
     },
     {
@@ -322,6 +350,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#b8863f',
         periods: [{ start: -1070, end: 350 }],
         rootNodeId: 'kush',
+        wikidataId: 'Q241790',
         blurb: 'Nubian rulers of iron and gold who once wore the crown of Egypt itself.',
     },
     {
@@ -333,6 +362,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#6fb6c4',
         periods: [{ start: -3000, end: -1100 }],
         rootNodeId: 'minoan',
+        wikidataId: 'Q134178',
         blurb: 'Bronze-age palaces, leaping bulls, and Europe\'s first maritime power.',
     },
     {
@@ -344,6 +374,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#8aa86b',
         periods: [{ start: -1200, end: -50 }],
         rootNodeId: 'celts',
+        wikidataId: 'Q35966',
         blurb: 'Iron-age tribes whose art and myth spread from Ireland to Anatolia.',
     },
     {
@@ -355,6 +386,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#cf9b5a',
         periods: [{ start: -814, end: -146 }],
         rootNodeId: 'carthage',
+        wikidataId: 'Q2429397',
         blurb: 'A Phoenician sea-empire that rivalled Rome and marched elephants over the Alps.',
     },
     {
@@ -366,6 +398,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#7f9e7a',
         periods: [{ start: -1500, end: -400 }],
         rootNodeId: 'olmec',
+        wikidataId: 'Q135364',
         blurb: 'Colossal stone heads and the first great civilisation of the Americas.',
     },
     {
@@ -377,6 +410,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#d1a24e',
         periods: [{ start: 1430, end: 1591 }],
         rootNodeId: 'songhai',
+        wikidataId: 'Q202687',
         blurb: 'One of history\'s largest African empires, centred on the scholars of Timbuktu.',
     },
     {
@@ -388,6 +422,7 @@ export const CIVILIZATIONS: Civilization[] = [
         color: '#5fb0a8',
         periods: [{ start: 900, end: 1800 }],
         rootNodeId: 'polynesia',
+        wikidataId: 'Q35942',
         blurb: 'Wayfinders who read stars and swells to settle a triangle of a thousand islands.',
     },
 ];

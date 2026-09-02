@@ -101,9 +101,9 @@ export default function GraphExplorer({
     }, [civ]);
 
     const focusView = useMemo(
-        () => (focusId && !activeStory ? buildFocusView(focusId, size.w, size.h) : null),
+        () => (focusId && !activeStory ? buildFocusView(focusId, prevFocusId, size.w, size.h) : null),
         // storeVersion: recompute when live neighbours arrive.
-        [focusId, activeStory, size.w, size.h, storeVersion],
+        [focusId, prevFocusId, activeStory, size.w, size.h, storeVersion],
     );
 
     const pathView = useMemo(

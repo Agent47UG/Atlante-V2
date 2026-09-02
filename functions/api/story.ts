@@ -33,9 +33,19 @@ export async function onRequestPost(ctx: Ctx): Promise<Response> {
   }
 
   try {
-    const path = await findPath(ctx.env, from, to);
+    // Prefer a real, walkable graph path (fully grounded). If the sparse graph
+    // can't connect the two concepts, fall back to a shared-neighbour bridge,
+    // then finally to the bare endpoints — Gemini narrates the leap. Either way
+    // every stop is a real Wikidata entity, so the story stays fact-anchored.
+    let path = await findPath(ctx.env, from, to);
     if (!path || path.length === 0) {
-      return errorJson('No path found between those concepts', 404);
+      const [nf, nt] = await Promise.all([
+        resolveNode(ctx.env, from),
+        resolveNode(ctx.env, to),
+      ]);
+      const fromNeighbors = new Set(nf.neighbors.map((n) => n.id));
+      const bridge = nt.neighbors.find((n) => fromNeighbors.has(n.id));
+      path = bridge ? [from, bridge.id, to] : [from, to];
     }
 
     // Resolve every node on the path (for summaries + neighbour verbs).

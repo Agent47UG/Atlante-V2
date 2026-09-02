@@ -24,7 +24,7 @@ export function hashUnit(str: string, salt = 0): number {
 export const VIEW_W = 1000;
 export const VIEW_H = 640;
 /** How many nodes (besides the focus) we always try to show. */
-export const TARGET_NODES = 9;
+export const TARGET_NODES = 7;
 
 export interface Pt {
     x: number;
@@ -65,7 +65,12 @@ export function nodeRadius(type: NodeType, isFocus: boolean): number {
  * there aren't enough — nodes one hop further out, clustered around whichever
  * neighbour connects them. Clicking any node re-centres the view on it.
  */
-export function buildFocusView(focusId: string, w = VIEW_W, h = VIEW_H): FocusView {
+export function buildFocusView(
+    focusId: string,
+    cameFromId: string | null = null,
+    w = VIEW_W,
+    h = VIEW_H,
+): FocusView {
     const focus = NODE_MAP[focusId];
     if (!focus) return { nodes: [], edges: [], hiddenCount: 0 };
 
@@ -100,13 +105,15 @@ export function buildFocusView(focusId: string, w = VIEW_W, h = VIEW_H): FocusVi
                 candidates.push({ node, parentId: pid });
             }
         }
-        // Civilizations anchor the view; after that, freshly-discovered live
-        // nodes (higher discovery rank) come before the older curated core so
-        // the internet frontier surfaces instead of hiding in "+N more".
+        // Civilizations anchor the view; after that we keep the order the
+        // backend already ranked neighbours in (by Wikidata notability), which
+        // is preserved by discovery/add order. Ascending = most notable first,
+        // so the constellation reads as a curated "greatest hits" set instead
+        // of a churn of the newest raw fetches.
         candidates.sort(
             (a, b) =>
                 typeRank(a.node) - typeRank(b.node) ||
-                nodeOrder(b.node.id) - nodeOrder(a.node.id),
+                nodeOrder(a.node.id) - nodeOrder(b.node.id),
         );
 
         const nextFrontier: string[] = [];
@@ -117,6 +124,29 @@ export function buildFocusView(focusId: string, w = VIEW_W, h = VIEW_H): FocusVi
             nextFrontier.push(c.node.id);
         }
         frontier = nextFrontier;
+    }
+
+    // Guarantee the node we navigated from stays visible as a direct link, so
+    // the way back is always one click away and never crowded out by ranking.
+    if (
+        cameFromId &&
+        cameFromId !== focusId &&
+        NODE_MAP[cameFromId] &&
+        !visited.has(cameFromId)
+    ) {
+        if (picked.length >= TARGET_NODES) {
+            // Prefer dropping a deeper (distance-2) node over a direct neighbour.
+            let idx = picked.length - 1;
+            for (let k = picked.length - 1; k >= 0; k--) {
+                if (picked[k].depth >= 2) {
+                    idx = k;
+                    break;
+                }
+            }
+            picked.splice(idx, 1);
+        }
+        picked.push({ node: NODE_MAP[cameFromId], parentId: focusId, depth: 1 });
+        visited.add(cameFromId);
     }
 
     const shownDepth1 = picked.filter((p) => p.depth === 1).length;

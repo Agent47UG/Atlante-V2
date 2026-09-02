@@ -63,6 +63,12 @@ export interface Civilization {
     /** Node the exploration starts from when this civilization is opened. */
     rootNodeId: string;
     blurb: string;
+    /**
+     * Pinned Wikidata entity (Q-id) for this civilization. Used to bridge the
+     * seed node into the live graph deterministically, instead of a fuzzy
+     * label search that can land on outline/stub pages.
+     */
+    wikidataId?: string;
 }
 
 export interface StoryStep {

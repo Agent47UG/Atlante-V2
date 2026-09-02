@@ -161,13 +161,14 @@ async function enrichNeighbors(
   for (const r of raw) if (!relOf.has(r.id)) relOf.set(r.id, r.rel);
   const ids = [...relOf.keys()].slice(0, 40);
   const values = ids.map((id) => `wd:${id}`).join(' ');
-  const query = `SELECT ?o ?oLabel ?sl ?coord ?date ?t WHERE {
+  const query = `SELECT ?o ?oLabel ?sl ?coord ?date ?t ?d WHERE {
     VALUES ?o { ${values} }
     ?o wikibase:sitelinks ?sl . FILTER(?sl >= ${MIN_SITELINKS})
     ?o rdfs:label ?oLabel . FILTER(LANG(?oLabel)="en")
     OPTIONAL { ?o wdt:P625 ?coord }
     OPTIONAL { ?o wdt:P571 ?date }
     OPTIONAL { ?o wdt:P31 ?t }
+    OPTIONAL { ?o schema:description ?d . FILTER(LANG(?d)="en") }
   } ORDER BY DESC(?sl)`;
   const url =
     'https://query.wikidata.org/sparql?format=json&query=' +
@@ -197,6 +198,135 @@ async function enrichNeighbors(
       year: parseYear(b.date?.value),
       rel: relOf.get(id) ?? 'related to',
       dir: 'out',
+      desc: b.d?.value,
+    });
+    if (result.length >= MAX_NEIGHBORS) break;
+  }
+  return result;
+}
+
+/**
+ * Incoming-relation discovery for hub entities (civilizations, places,
+ * cultures). Their notable members — cities, rulers, artefacts, events —
+ * point *inward* via P361/P17/P2596/P276/P463, so the outgoing whitelist
+ * misses them entirely. One light SPARQL over the focus id fills that gap.
+ */
+const INCOMING_REL: Record<string, string> = {
+  P361: 'part of',
+  P17: 'of',
+  P2596: 'shaped by',
+  P276: 'located in',
+  P463: 'member of',
+};
+
+async function fetchIncoming(qid: string): Promise<WireNeighbor[]> {
+  const props = Object.keys(INCOMING_REL).map((p) => `wdt:${p}`).join(', ');
+  const query = `SELECT ?s ?sLabel ?sl ?coord ?date ?t ?p ?d WHERE {
+    ?s ?p wd:${qid} .
+    FILTER(?p IN (${props}))
+    ?s wikibase:sitelinks ?sl . FILTER(?sl >= ${MIN_SITELINKS})
+    ?s rdfs:label ?sLabel . FILTER(LANG(?sLabel)="en")
+    OPTIONAL { ?s wdt:P625 ?coord }
+    OPTIONAL { ?s wdt:P571 ?date }
+    OPTIONAL { ?s wdt:P31 ?t }
+    OPTIONAL { ?s schema:description ?d . FILTER(LANG(?d)="en") }
+  } ORDER BY DESC(?sl) LIMIT 12`;
+  const url =
+    'https://query.wikidata.org/sparql?format=json&query=' +
+    encodeURIComponent(query);
+  let data: any;
+  try {
+    data = await getJSON(url);
+  } catch {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const result: WireNeighbor[] = [];
+  for (const b of data.results?.bindings ?? []) {
+    const id = b.s.value.split('/').pop() as string;
+    if (id === qid || seen.has(id)) continue;
+    seen.add(id);
+    const typeQ = b.t?.value?.split('/').pop();
+    const pid = b.p?.value?.split('/').pop() as string | undefined;
+    let lat: number | undefined;
+    let lon: number | undefined;
+    const cm = /Point\(([-\d.]+) ([-\d.]+)\)/.exec(b.coord?.value ?? '');
+    if (cm) {
+      lon = parseFloat(cm[1]);
+      lat = parseFloat(cm[2]);
+    }
+    result.push({
+      id,
+      label: b.sLabel.value,
+      type: mapType(typeQ ? [typeQ] : [], lat !== undefined),
+      lat,
+      lon,
+      year: parseYear(b.date?.value),
+      rel: (pid && INCOMING_REL[pid]) || 'related to',
+      dir: 'in',
+      desc: b.d?.value,
+    });
+  }
+  return result;
+}
+
+/**
+ * Last-resort neighbours for otherwise-empty nodes: any notable entity that
+ * links to this one via *any* property. A high notability floor keeps the
+ * results meaningful rather than metadata noise. Used only when the strict
+ * whitelist + incoming passes both come back empty, so no node is a dead end.
+ */
+async function fetchLooseNeighbors(qid: string): Promise<WireNeighbor[]> {
+  const query = `SELECT DISTINCT ?s ?sLabel ?sl ?coord ?date ?t ?d WHERE {
+    ?s ?p wd:${qid} .
+    ?s wikibase:sitelinks ?sl . FILTER(?sl >= 12)
+    ?s rdfs:label ?sLabel . FILTER(LANG(?sLabel)="en")
+    FILTER NOT EXISTS { ?s wdt:P31 wd:Q4167836 }
+    FILTER NOT EXISTS { ?s wdt:P31 wd:Q4167410 }
+    FILTER NOT EXISTS { ?s wdt:P31 wd:Q13406463 }
+    OPTIONAL { ?s wdt:P625 ?coord }
+    OPTIONAL { ?s wdt:P571 ?date }
+    OPTIONAL { ?s wdt:P31 ?t }
+    OPTIONAL { ?s schema:description ?d . FILTER(LANG(?d)="en") }
+  } ORDER BY DESC(?sl) LIMIT 24`;
+  const url =
+    'https://query.wikidata.org/sparql?format=json&query=' +
+    encodeURIComponent(query);
+  let data: any;
+  try {
+    data = await getJSON(url);
+  } catch {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const result: WireNeighbor[] = [];
+  const META = /^(Category|Template|Portal|Wikipedia|Help|Draft|Module|List of):/i;
+  for (const b of data.results?.bindings ?? []) {
+    const id = b.s.value.split('/').pop() as string;
+    if (id === qid || seen.has(id)) continue;
+    const label = b.sLabel.value as string;
+    if (META.test(label)) continue;
+    seen.add(id);
+    const typeQ = b.t?.value?.split('/').pop();
+    let lat: number | undefined;
+    let lon: number | undefined;
+    const cm = /Point\(([-\d.]+) ([-\d.]+)\)/.exec(b.coord?.value ?? '');
+    if (cm) {
+      lon = parseFloat(cm[1]);
+      lat = parseFloat(cm[2]);
+    }
+    result.push({
+      id,
+      label,
+      type: mapType(typeQ ? [typeQ] : [], lat !== undefined),
+      lat,
+      lon,
+      year: parseYear(b.date?.value),
+      rel: 'related to',
+      dir: 'in',
+      desc: b.d?.value,
     });
     if (result.length >= MAX_NEIGHBORS) break;
   }
@@ -223,10 +353,33 @@ export async function fetchWikidataNode(qid: string): Promise<FetchedNode> {
   const year = yearOf(entity);
   const type = mapType(instanceOfIds(entity), lat !== undefined);
 
-  const [wp, neighbors] = await Promise.all([
+  const [wp, outgoing, incoming] = await Promise.all([
     wikipediaSummary(enTitle),
     enrichNeighbors(extractNeighbors(entity)),
+    fetchIncoming(qid),
   ]);
+
+  // Outgoing relations first, then backfill with notable inbound members
+  // (this is what makes civilization/place hubs non-empty).
+  const neighbors: WireNeighbor[] = [];
+  const seen = new Set<string>();
+  for (const n of [...outgoing, ...incoming]) {
+    if (seen.has(n.id)) continue;
+    seen.add(n.id);
+    neighbors.push(n);
+    if (neighbors.length >= MAX_NEIGHBORS) break;
+  }
+
+  // Dead-end rescue: if nothing structured was found, fall back to any notable
+  // entity that references this one, so a node is never left with no threads.
+  if (neighbors.length === 0) {
+    for (const n of await fetchLooseNeighbors(qid)) {
+      if (seen.has(n.id) || n.id === qid) continue;
+      seen.add(n.id);
+      neighbors.push(n);
+      if (neighbors.length >= MAX_NEIGHBORS) break;
+    }
+  }
 
   const summary =
     wp.summary ?? entity.descriptions?.en?.value ?? 'No description available.';

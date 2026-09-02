@@ -22,6 +22,9 @@ export interface WireNeighbor {
   rel: string;
   /** "out" = focus → neighbour, "in" = neighbour → focus. */
   dir: 'in' | 'out';
+  /** Short one-line Wikidata description, so a neighbour reads richly before
+   *  it is expanded into a full node. */
+  desc?: string;
 }
 
 /** A fully-resolved node (the one that was clicked). */
@@ -53,15 +56,4 @@ export interface Env {
   TURSO_TOKEN: string;
   GEMINI_KEY: string;
   GEMINI_MODEL?: string;
-  ATLANTE_KV?: KVNamespace;
-}
-
-// Minimal KV typing so we don't need @cloudflare/workers-types at author time.
-export interface KVNamespace {
-  get(key: string, type?: 'text'): Promise<string | null>;
-  put(
-    key: string,
-    value: string,
-    options?: { expirationTtl?: number },
-  ): Promise<void>;
 }

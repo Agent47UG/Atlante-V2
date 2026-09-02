@@ -267,6 +267,22 @@ function CameraController({ controlsRef, target, idleTimerRef, groundMode }: Cam
         }
     }, [groundMode, target, camera, controlsRef, idleTimerRef]);
 
+    // If the user grabs the globe mid-flight, hand them control immediately
+    // instead of fighting their drag with the recentering slerp (which left the
+    // globe feeling "stuck" and unrotatable when it never reached its target).
+    useEffect(() => {
+        const controls = controlsRef.current;
+        if (!controls) return;
+        const releaseToUser = () => {
+            if (recentering.current) {
+                recentering.current = false;
+                targetRef.current = null;
+            }
+        };
+        controls.addEventListener('start', releaseToUser);
+        return () => controls.removeEventListener('start', releaseToUser);
+    }, [controlsRef]);
+
     useFrame(() => {
         const t = targetRef.current;
         if (!t) return;
