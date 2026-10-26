@@ -30,6 +30,47 @@ const VALID_TYPES = new Set<NodeType>([
   'artwork',
 ]);
 
+/** Memoised working model per Worker isolate so a discovered replacement model
+ *  is used immediately on subsequent requests without extra 404 round-trips. */
+let cachedWorkingModel: string | null = null;
+
+/**
+ * Query Google's `/v1beta/models` list to dynamically find the newest active
+ * Gemini Flash text model supporting `generateContent`. Used if all hardcoded
+ * model names are ever retired.
+ */
+async function discoverLatestFlashModel(apiKey: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+    );
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    const list: any[] = data?.models ?? [];
+    const candidates = list
+      .filter((m) => {
+        const name = String(m?.name ?? '').toLowerCase();
+        const methods: string[] = m?.supportedGenerationMethods ?? [];
+        return (
+          methods.includes('generateContent') &&
+          name.includes('gemini') &&
+          name.includes('flash') &&
+          !name.includes('tts') &&
+          !name.includes('image') &&
+          !name.includes('audio') &&
+          !name.includes('embedding')
+        );
+      })
+      .map((m) => String(m.name).replace(/^models\//, ''));
+
+    // Sort descending so highest version numbers (e.g. gemini-4.x-flash > gemini-3.8-flash) come first.
+    candidates.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+    return candidates[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function slugify(s: string, index: number): string {
   const slug = s
     .toLowerCase()
@@ -96,11 +137,20 @@ export async function generateStory(
   }
 
   const configuredModel = env.GEMINI_MODEL?.trim();
+  // Prefer gemini-3.8-flash (current active Gemini Flash model). Ignore legacy
+  // 1.x / 2.x GEMINI_MODEL env values if they are still set in dashboard vars,
+  // or try them only after gemini-3.8-flash and gemini-flash-latest.
+  const isLegacyConfigured =
+    configuredModel && /^gemini-[12]\./i.test(configuredModel);
   const models = Array.from(
     new Set(
-      [configuredModel, 'gemini-2.5-flash', 'gemini-2.0-flash'].filter(
-        Boolean,
-      ) as string[],
+      [
+        cachedWorkingModel,
+        !isLegacyConfigured ? configuredModel : undefined,
+        'gemini-3.8-flash',
+        'gemini-flash-latest',
+        isLegacyConfigured ? configuredModel : undefined,
+      ].filter(Boolean) as string[],
     ),
   );
 
@@ -136,7 +186,14 @@ Rules:
 
   let lastError = 'Unknown Gemini failure';
 
-  for (const model of models) {
+  const tried = new Set<string>();
+  let discoveredFromApi = false;
+
+  for (let idx = 0; idx < models.length; idx++) {
+    const model = models[idx].replace(/^models\//, '');
+    if (tried.has(model)) continue;
+    tried.add(model);
+
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent` +
       `?key=${encodeURIComponent(apiKey)}`;
@@ -157,8 +214,27 @@ Rules:
       if (!res.ok) {
         const errBody = await res.text().catch(() => '');
         lastError = `Model ${model} HTTP ${res.status}: ${errBody.slice(0, 200)}`;
+        if (cachedWorkingModel === model) cachedWorkingModel = null;
+        // 1. If Google's 404 message recommends a replacement model
+        //    (e.g. "Please update your code to use models/gemini-3.8-flash"),
+        //    automatically enqueue and try it.
+        const suggested = /use\s+models\/([a-zA-Z0-9._-]+)/i.exec(errBody)?.[1];
+        if (suggested && !tried.has(suggested) && !models.includes(suggested)) {
+          models.push(suggested);
+        }
+        // 2. If we've exhausted known models on a 404, query Google's /v1beta/models
+        //    endpoint to auto-discover the newest active Flash model.
+        if (res.status === 404 && idx === models.length - 1 && !discoveredFromApi) {
+          discoveredFromApi = true;
+          const discovered = await discoverLatestFlashModel(apiKey);
+          if (discovered && !tried.has(discovered)) {
+            models.push(discovered);
+          }
+        }
         continue;
       }
+
+      cachedWorkingModel = model;
 
       const data: any = await res.json();
       const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
