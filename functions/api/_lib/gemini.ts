@@ -39,6 +39,43 @@ function slugify(s: string, index: number): string {
   return slug || `stop-${index + 1}`;
 }
 
+export interface GenerateStoryResult {
+  story: GeneratedStory | null;
+  error?: string;
+}
+
+/** Extract the first balanced or outer JSON object/array from a string. */
+function extractJsonPayload(raw: string): any {
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // Fall back to slicing from the first '{' or '[' to the matching end.
+    const objStart = cleaned.indexOf('{');
+    const objEnd = cleaned.lastIndexOf('}');
+    if (objStart !== -1 && objEnd > objStart) {
+      try {
+        return JSON.parse(cleaned.slice(objStart, objEnd + 1));
+      } catch {
+        // continue
+      }
+    }
+    const arrStart = cleaned.indexOf('[');
+    const arrEnd = cleaned.lastIndexOf(']');
+    if (arrStart !== -1 && arrEnd > arrStart) {
+      try {
+        return JSON.parse(cleaned.slice(arrStart, arrEnd + 1));
+      } catch {
+        // continue
+      }
+    }
+    return null;
+  }
+}
+
 /**
  * Ask Gemini to author an entire 6–8 stop historical journey directly as
  * structured JSON, with accurate eras, coordinates, civilizations, countries,
@@ -47,146 +84,169 @@ function slugify(s: string, index: number): string {
 export async function generateStory(
   env: Env,
   userPrompt: string,
-): Promise<GeneratedStory | null> {
-  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
+): Promise<GenerateStoryResult> {
+  const apiKey = (
+    env.GEMINI_KEY ||
+    (env as any).GEMINI_API_KEY ||
+    (env as any).GOOGLE_API_KEY ||
+    ''
+  ).trim();
+  if (!apiKey) {
+    return { story: null, error: 'Missing GEMINI_KEY environment variable' };
+  }
 
-  const systemInstruction = `You are the historian and cartographer of "Atlante", a poetic interactive 3D historical atlas.
+  const configuredModel = env.GEMINI_MODEL?.trim();
+  const models = Array.from(
+    new Set(
+      [configuredModel, 'gemini-2.5-flash', 'gemini-2.0-flash'].filter(
+        Boolean,
+      ) as string[],
+    ),
+  );
+
+  const prompt = `You are the historian and cartographer of "Atlante", a poetic interactive 3D historical atlas.
 Given a user's topic, question, or pair of concepts, chart a chronological historical journey of 6 to 8 stops that traces how the idea, technology, culture, or event unfolded across time and geography.
 
+User prompt: "${userPrompt}"
+
+Return ONLY valid JSON matching this exact structure:
+{
+  "question": "A polished title or question framing the historical journey",
+  "stops": [
+    {
+      "id": "unique-kebab-case-slug",
+      "label": "Concise Name (max 4 words)",
+      "type": "concept",
+      "era": "628 AD",
+      "year": 628,
+      "civName": "Classical India",
+      "country": "India",
+      "lat": 24.5,
+      "lon": 72.8,
+      "caption": "2 to 3 evocative, historically accurate sentences (40-70 words) explaining what happened at this stop and how it connects in the overarching story."
+    }
+  ]
+}
+
 Rules:
-1. Return between 6 and 8 chronological stops. Every stop must be a real, historically verifiable person, invention/technology, place, artwork, concept, or civilization — never filler or generic placeholders.
-2. Each stop must include:
-   - "id": unique kebab-case slug (e.g. "brahmagupta-zero", "house-of-wisdom").
-   - "label": concise, canonical name (max 4 words, e.g. "Brahmagupta's Zero", "Al-Khwarizmi", "The Analytical Engine").
-   - "type": one of "civilization", "person", "concept", "technology", "place", "artwork".
-   - "era": readable historical date or period (e.g. "628 AD", "c. 820 AD", "3000 BC – 539 BC").
-   - "year": integer year (negative for BC, positive for AD, e.g. -3200 or 1679).
-   - "civName": the historical civilization, empire, or cultural era of this stop (e.g. "Classical India", "Abbasid Caliphate", "Renaissance Italy", "Industrial Britain", "Han Dynasty").
-   - "country": the modern country name corresponding to the stop's location (e.g. "India", "Iraq", "Italy", "United Kingdom", "China").
-   - "lat" and "lon": accurate terrestrial land coordinates (latitude -90..90, longitude -180..180) inside that country so the 3D globe can fly there and highlight the country polygon.
-   - "caption": 2 to 3 evocative, historically rich sentences (40–70 words) explaining what happened at this stop and how it connects the previous stop to the next in the overarching story.`;
+1. Include between 6 and 8 chronological stops in "stops". Every stop must be a real, historically verifiable person, invention, place, artwork, concept, or civilization.
+2. "type" must be one of: "civilization", "person", "concept", "technology", "place", "artwork".
+3. "year" must be an integer (negative for BC, positive for AD, e.g. -3000 or 1679).
+4. "lat" (-85 to 85) and "lon" (-180 to 180) must be terrestrial land coordinates inside "country" so the 3D globe can fly there and highlight the country.`;
 
-  const responseSchema = {
-    type: 'OBJECT',
-    properties: {
-      question: {
-        type: 'STRING',
-        description: 'A polished title or question framing the historical journey.',
-      },
-      stops: {
-        type: 'ARRAY',
-        description: '6 to 8 chronological stops tracing the story across time and geography.',
-        items: {
-          type: 'OBJECT',
-          properties: {
-            id: { type: 'STRING' },
-            label: { type: 'STRING' },
-            type: {
-              type: 'STRING',
-              enum: ['civilization', 'person', 'concept', 'technology', 'place', 'artwork'],
-            },
-            era: { type: 'STRING' },
-            year: { type: 'INTEGER' },
-            civName: { type: 'STRING' },
-            country: { type: 'STRING' },
-            lat: { type: 'NUMBER' },
-            lon: { type: 'NUMBER' },
-            caption: { type: 'STRING' },
+  let lastError = 'Unknown Gemini failure';
+
+  for (const model of models) {
+    const url =
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent` +
+      `?key=${encodeURIComponent(apiKey)}`;
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.7,
+            responseMimeType: 'application/json',
           },
-          required: [
-            'id',
-            'label',
-            'type',
-            'era',
-            'year',
-            'civName',
-            'country',
-            'lat',
-            'lon',
-            'caption',
-          ],
-        },
-      },
-    },
-    required: ['question', 'stops'],
-  };
-
-  const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent` +
-    `?key=${env.GEMINI_KEY}`;
-
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: `User prompt: "${userPrompt}"` }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          responseMimeType: 'application/json',
-          responseSchema,
-        },
-      }),
-    });
-    if (!res.ok) return null;
-    const data: any = await res.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawText) return null;
-
-    const cleaned = String(rawText)
-      .replace(/^```(?:json)?\s*/i, '')
-      .replace(/\s*```$/, '')
-      .trim();
-    const parsed = JSON.parse(cleaned);
-    if (!parsed || !Array.isArray(parsed.stops) || parsed.stops.length < 2) {
-      return null;
-    }
-
-    const usedIds = new Set<string>();
-    const stops: GeneratedStoryStop[] = [];
-    for (let i = 0; i < parsed.stops.length; i++) {
-      const s = parsed.stops[i];
-      if (!s || typeof s.label !== 'string' || !s.label.trim()) continue;
-      let id = slugify(String(s.id || s.label), i);
-      if (usedIds.has(id)) id = `${id}-${i + 1}`;
-      usedIds.add(id);
-
-      const type: NodeType = VALID_TYPES.has(s.type) ? s.type : 'concept';
-      const year = Number.isFinite(Number(s.year)) ? Math.round(Number(s.year)) : 0;
-      const lat = Number.isFinite(Number(s.lat))
-        ? Math.max(-85, Math.min(85, Number(s.lat)))
-        : 0;
-      const lon = Number.isFinite(Number(s.lon))
-        ? Math.max(-180, Math.min(180, Number(s.lon)))
-        : 0;
-
-      stops.push({
-        id,
-        label: s.label.trim(),
-        type,
-        era: String(s.era ?? '').trim() || (year < 0 ? `${Math.abs(year)} BC` : `${year} AD`),
-        year,
-        civName: String(s.civName ?? '').trim() || 'World History',
-        country: String(s.country ?? '').trim(),
-        lat,
-        lon,
-        caption: String(s.caption ?? '').trim(),
+        }),
       });
+
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '');
+        lastError = `Model ${model} HTTP ${res.status}: ${errBody.slice(0, 200)}`;
+        continue;
+      }
+
+      const data: any = await res.json();
+      const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
+      if (!parts.length) {
+        lastError = `Model ${model} returned no content parts`;
+        continue;
+      }
+
+      // Gemini 2.5 thinking models may emit a thought part before the JSON part.
+      // Try non-thought parts from last to first, then fall back to all parts.
+      const orderedParts = [
+        ...parts.filter((p) => !p?.thought && typeof p?.text === 'string').reverse(),
+        ...parts.filter((p) => p?.thought && typeof p?.text === 'string').reverse(),
+      ];
+
+      let parsed: any = null;
+      for (const part of orderedParts) {
+        parsed = extractJsonPayload(part.text);
+        if (parsed) break;
+      }
+
+      if (!parsed) {
+        lastError = `Model ${model} returned non-JSON text`;
+        continue;
+      }
+
+      const rawStops: any[] = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed.stops)
+          ? parsed.stops
+          : Array.isArray(parsed.steps)
+            ? parsed.steps
+            : [];
+
+      if (rawStops.length < 2) {
+        lastError = `Model ${model} returned fewer than 2 stops`;
+        continue;
+      }
+
+      const usedIds = new Set<string>();
+      const stops: GeneratedStoryStop[] = [];
+      for (let i = 0; i < rawStops.length; i++) {
+        const s = rawStops[i];
+        if (!s || typeof s.label !== 'string' || !s.label.trim()) continue;
+        let id = slugify(String(s.id || s.label), i);
+        if (usedIds.has(id)) id = `${id}-${i + 1}`;
+        usedIds.add(id);
+
+        const rawType = String(s.type ?? '').toLowerCase() as NodeType;
+        const type: NodeType = VALID_TYPES.has(rawType) ? rawType : 'concept';
+        const year = Number.isFinite(Number(s.year)) ? Math.round(Number(s.year)) : 0;
+        const lat = Number.isFinite(Number(s.lat))
+          ? Math.max(-85, Math.min(85, Number(s.lat)))
+          : 0;
+        const lon = Number.isFinite(Number(s.lon))
+          ? Math.max(-180, Math.min(180, Number(s.lon)))
+          : 0;
+        const caption = String(s.caption ?? s.summary ?? '').trim();
+
+        stops.push({
+          id,
+          label: s.label.trim(),
+          type,
+          era: String(s.era ?? '').trim() || (year < 0 ? `${Math.abs(year)} BC` : `${year} AD`),
+          year,
+          civName: String(s.civName ?? s.civilization ?? '').trim() || 'World History',
+          country: String(s.country ?? '').trim(),
+          lat,
+          lon,
+          caption,
+        });
+      }
+
+      if (stops.length < 2) {
+        lastError = `Model ${model} produced fewer than 2 valid stops`;
+        continue;
+      }
+
+      return {
+        story: {
+          question: String(parsed.question || parsed.title || userPrompt).trim(),
+          stops,
+        },
+      };
+    } catch (err: any) {
+      lastError = `Model ${model} exception: ${err?.message ?? err}`;
     }
-
-    if (stops.length < 2) return null;
-
-    return {
-      question: String(parsed.question || userPrompt).trim(),
-      stops,
-    };
-  } catch {
-    return null;
   }
+
+  return { story: null, error: lastError };
 }

@@ -24,9 +24,12 @@ export async function onRequestPost(ctx: Ctx): Promise<Response> {
   }
 
   try {
-    const generated = await generateStory(ctx.env, prompt);
+    const { story: generated, error } = await generateStory(ctx.env, prompt);
     if (!generated || generated.stops.length < 2) {
-      return errorJson('Could not generate a story for that prompt', 422);
+      return errorJson(
+        `Could not generate a story for that prompt (${error ?? 'empty response'})`,
+        422,
+      );
     }
 
     const storyPrefix = `story-${Date.now().toString(36)}`;
