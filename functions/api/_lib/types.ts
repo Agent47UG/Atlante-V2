@@ -27,7 +27,7 @@ export interface WireNeighbor {
   desc?: string;
 }
 
-/** A fully-resolved node (the one that was clicked). */
+/** A fully-resolved node (the one that was clicked or generated in a story). */
 export interface WireNode {
   id: string;
   label: string;
@@ -36,6 +36,10 @@ export interface WireNode {
   lat?: number;
   lon?: number;
   year?: number;
+  era?: string;
+  civName?: string;
+  country?: string;
+  civilizationId?: string;
   image?: string;
   glyph?: string;
 }

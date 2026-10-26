@@ -21,6 +21,10 @@ export interface NodeDetails {
     glyph?: string;
     /** Free-form era string, e.g. "3500–539 BC". */
     era?: string;
+    /** Historical civilization, empire, or cultural era name (for story nodes). */
+    civName?: string;
+    /** Modern or historical country name (fallback when outside TopoJSON polygons). */
+    country?: string;
     born?: string;
     died?: string;
     contributions?: string[];

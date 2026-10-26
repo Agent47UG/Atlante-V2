@@ -19,9 +19,17 @@ const CAMERA_DISTANCE = 3.6;
 // the country rotates downward and reads as the ground (not dead-centre).
 const SELECT_TILT = THREE.MathUtils.degToRad(-60);
 
+export interface GlobeFocusPoint {
+    id: string;
+    lat: number;
+    lon: number;
+}
+
 interface GlobeProps {
     civilizations?: Civilization[];
     selectedCivId?: string | null;
+    /** Optional exact coordinate to fly the globe to and highlight (e.g. story step). */
+    focusPoint?: GlobeFocusPoint | null;
     onSelectCiv?: (id: string) => void;
     /** Current timeline year — drives civilization glow. */
     year?: number;
@@ -464,18 +472,23 @@ function GroundController({
     return null;
 }
 
-function Scene({ civilizations, selectedCivId, onSelectCiv, year, groundMode, onGroundSettled }: GlobeProps) {
+function Scene({ civilizations, selectedCivId, focusPoint, onSelectCiv, year, groundMode, onGroundSettled }: GlobeProps) {
     const controlsRef = useRef<OrbitControlsImpl | null>(null);
     const idleTimer = useRef<number | null>(null);
     const selectedCiv = useMemo(() => {
         if (!selectedCivId || !civilizations) return null;
         return civilizations.find((c) => c.id === selectedCivId) ?? null;
     }, [selectedCivId, civilizations]);
+    const activeCoord = useMemo(() => {
+        if (focusPoint) return { id: focusPoint.id, lat: focusPoint.lat, lon: focusPoint.lon };
+        if (selectedCiv) return { id: selectedCiv.id, lat: selectedCiv.lat, lon: selectedCiv.lon };
+        return null;
+    }, [focusPoint, selectedCiv]);
     const selectedTarget = useMemo(() => {
-        if (!selectedCiv) return null;
-        // Look at the civilization from above: tilt the camera direction toward
+        if (!activeCoord) return null;
+        // Look at the target location from above: tilt the camera direction toward
         // the north pole so it rotates down into the "ground" position.
-        const dir = latLonToVec3(selectedCiv.lat, selectedCiv.lon, 1).normalize();
+        const dir = latLonToVec3(activeCoord.lat, activeCoord.lon, 1).normalize();
         const up = new THREE.Vector3(0, 1, 0);
         const axis = new THREE.Vector3().crossVectors(dir, up);
         if (axis.lengthSq() > 1e-6) {
@@ -483,10 +496,10 @@ function Scene({ civilizations, selectedCivId, onSelectCiv, year, groundMode, on
             dir.applyQuaternion(new THREE.Quaternion().setFromAxisAngle(axis, SELECT_TILT));
         }
         return dir.multiplyScalar(CAMERA_DISTANCE);
-    }, [selectedCiv]);
+    }, [activeCoord]);
 
-    // Every civilization active at the current year (plus the selected one) has
-    // its country darkened on the globe.
+    // Every civilization active at the current year (plus the focused/selected
+    // location) has its country darkened on the globe.
     const fillCivs = useMemo(() => {
         const map = new Map<string, { id: string; lat: number; lon: number }>();
         if (civilizations) {
@@ -496,11 +509,11 @@ function Scene({ civilizations, selectedCivId, onSelectCiv, year, groundMode, on
                 }
             }
         }
-        if (selectedCiv) {
-            map.set(selectedCiv.id, { id: selectedCiv.id, lat: selectedCiv.lat, lon: selectedCiv.lon });
+        if (activeCoord) {
+            map.set(activeCoord.id, { id: activeCoord.id, lat: activeCoord.lat, lon: activeCoord.lon });
         }
         return [...map.values()];
-    }, [civilizations, year, selectedCiv]);
+    }, [civilizations, year, activeCoord]);
 
     // Keep the latest groundMode readable inside stable event handlers.
     const groundRef = useRef(false);
@@ -608,7 +621,7 @@ function Scene({ civilizations, selectedCivId, onSelectCiv, year, groundMode, on
     );
 }
 
-export default function Globe({ civilizations, selectedCivId, onSelectCiv, year, groundMode, onGroundSettled }: GlobeProps) {
+export default function Globe({ civilizations, selectedCivId, focusPoint, onSelectCiv, year, groundMode, onGroundSettled }: GlobeProps) {
     return (
         <Canvas
             camera={{ position: [0, 0, 3.6], fov: 38 }}
@@ -619,6 +632,7 @@ export default function Globe({ civilizations, selectedCivId, onSelectCiv, year,
             <Scene
                 civilizations={civilizations}
                 selectedCivId={selectedCivId}
+                focusPoint={focusPoint}
                 onSelectCiv={onSelectCiv}
                 year={year}
                 groundMode={groundMode}

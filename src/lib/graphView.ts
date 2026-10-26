@@ -316,16 +316,21 @@ export function buildPathView(
     const n = resolved.length;
     if (n === 0) return { nodes: [], edges: [] };
 
-    const padX = w * 0.1;
-    const usableW = w - padX * 2;
-    const midY = h * 0.5;
-    const amp = Math.min(h * 0.34, h * 0.26 + 30);
+    const padX = Math.max(56, w * 0.085);
+    const usableW = Math.max(120, w - padX * 2);
+    const midY = h * 0.48;
+    const amp = Math.min(h * 0.3, h * 0.22 + 28);
 
     const nodes: PlacedNode[] = resolved.map((node, i) => {
         const t = n === 1 ? 0.5 : i / (n - 1);
         const x = padX + t * usableW;
-        // Gentle sine arc so the thread reads as a single sweep.
-        const y = midY - Math.sin(t * Math.PI) * amp * 0.5 + (i % 2 === 0 ? -amp * 0.18 : amp * 0.18);
+        // Gentle sine arc with alternating vertical stagger so labels on 6–8
+        // stops never collide horizontally.
+        const stagger = n > 5 ? 0.22 : 0.18;
+        const y =
+            midY -
+            Math.sin(t * Math.PI) * amp * 0.45 +
+            (i % 2 === 0 ? -amp * stagger : amp * stagger);
         return { node, x, y, isFocus: false };
     });
 

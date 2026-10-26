@@ -9,7 +9,12 @@ import {
   CIVILIZATION_MAP,
   activeCivilizations,
 } from "./data/new-data/civilizations";
-import { buildLiveStory, prewarmCivilizations } from "./data/new-data/liveStore";
+import {
+  NODE_GEO,
+  buildLiveStory,
+  nearestCiv,
+  prewarmCivilizations,
+} from "./data/new-data/liveStore";
 import type { Story } from "./data/types";
 import { NODE_MAP } from "./data/new-data/graph";
 
@@ -79,6 +84,19 @@ export default function App() {
     const story = dynamicStories[activeStory.id];
     return story ? { story, step: activeStory.step } : null;
   }, [activeStory, dynamicStories]);
+  const activeStoryNodeId = resolvedStory
+    ? resolvedStory.story.steps[resolvedStory.step]?.nodeId ?? null
+    : null;
+  // Exact coordinate of the current story step (or focused node with its own
+  // coordinates), so the 3D globe flies to each stop's lat/lon and highlights
+  // its country.
+  const globeFocusPoint = useMemo(() => {
+    const id = activeStoryNodeId;
+    if (!id) return null;
+    const geo = NODE_GEO[id];
+    if (geo?.lat === undefined || geo?.lon === undefined) return null;
+    return { id, lat: geo.lat, lon: geo.lon };
+  }, [activeStoryNodeId]);
   const activeCount = useMemo(() => activeCivilizations(year).length, [year]);
 
   // ── Actions ────────────────────────────────────────────────────────────
@@ -134,7 +152,12 @@ export default function App() {
         ? { id: a.id, step: clamp(a.step + delta, 0, story.steps.length - 1) }
         : a;
     });
-  const exitStory = () => setActiveStory(null);
+  const exitStory = () => {
+    if (activeStoryNodeId) {
+      setFocusStack([activeStoryNodeId]);
+    }
+    setActiveStory(null);
+  };
 
   // Pre-warm each civilization's live neighbours in the background on load, so
   // the first time one is opened it's already populated (and the shared cache
@@ -226,7 +249,7 @@ export default function App() {
   // As you walk the graph, follow each focus node's civilization: shift the
   // globe/ground to it and move the (hidden) timeline into that era.
   useEffect(() => {
-    if (!focusId) return;
+    if (!focusId || activeStoryNodeId) return;
     const civId = NODE_MAP[focusId]?.civilizationId;
     if (!civId || civId === selectedCivId) return;
     const civ = CIVILIZATION_MAP[civId];
@@ -234,7 +257,22 @@ export default function App() {
     setSelectedCivId(civId);
     const p = civ.periods[0];
     if (p) setYear(Math.round((p.start + p.end) / 2));
-  }, [focusId, selectedCivId]);
+  }, [focusId, activeStoryNodeId, selectedCivId]);
+
+  // As you step through a story, sync the timeline year and nearest
+  // civilization so the globe ground and active empires reflect each stop's era.
+  useEffect(() => {
+    if (!activeStoryNodeId) return;
+    const geo = NODE_GEO[activeStoryNodeId];
+    const node = NODE_MAP[activeStoryNodeId];
+    const civId = node?.civilizationId ?? nearestCiv(geo?.lat, geo?.lon);
+    if (civId && civId !== selectedCivId && CIVILIZATION_MAP[civId]) {
+      setSelectedCivId(civId);
+    }
+    if (geo?.year !== undefined) {
+      setYear(geo.year);
+    }
+  }, [activeStoryNodeId, selectedCivId]);
 
   return (
     <div className={`app stage-${stage}${groundVisual ? " is-ground" : ""}`}>
@@ -412,6 +450,7 @@ export default function App() {
         <Globe
           civilizations={CIVILIZATIONS}
           selectedCivId={selectedCivId}
+          focusPoint={globeFocusPoint}
           onSelectCiv={selectCiv}
           year={year}
           groundMode={groundMode}

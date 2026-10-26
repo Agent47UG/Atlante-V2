@@ -13,6 +13,7 @@ import type { CSSProperties } from 'react';
 import type { Civilization, Story, KnowledgeNode } from '../data/types';
 import { NODE_MAP, edgeBetween, pathBetween } from '../data/new-data/graph';
 import {
+    NODE_GEO,
     expand,
     subscribe as subscribeStore,
     isLoading as isNodeLoading,
@@ -83,8 +84,8 @@ export default function GraphExplorer({
     // Expanding ANY focused node fetches its neighbours from the internet
     // (civilization seeds bridge via their label; live Q-nodes fetch directly).
     useEffect(() => {
-        if (focusId) void expand(focusId);
-    }, [focusId]);
+        if (focusId && !activeStory) void expand(focusId);
+    }, [focusId, activeStory]);
     // Measure the sky band so we can lay out + render in real pixels (no
     // viewBox letterboxing that could push stars onto the globe).
     const canvasRef = useRef<HTMLDivElement>(null);
@@ -206,6 +207,7 @@ export default function GraphExplorer({
 
     // Era / civilisation / country shown in the left-hand detail panel.
     const panelFacts = (node: KnowledgeNode | undefined) => {
+        const geo = node ? NODE_GEO[node.id] : undefined;
         const factCiv = node?.civilizationId
             ? CIVILIZATION_MAP[node.civilizationId] ?? null
             : null;
@@ -220,14 +222,22 @@ export default function GraphExplorer({
                         .map((p) => `${fmtYear(p.start)} – ${fmtYear(p.end)}`)
                         .join(', ')
                   : null);
+        const civName = node?.details?.civName ?? factCiv?.name ?? null;
+        const country =
+            (geo?.lat !== undefined && geo?.lon !== undefined
+                ? countryName(geo.lat, geo.lon)
+                : null) ??
+            node?.details?.country ??
+            (factCiv ? countryName(factCiv.lat, factCiv.lon) : null);
         return {
             civ: factCiv,
+            civName,
             era,
-            country: factCiv ? countryName(factCiv.lat, factCiv.lon) : null,
+            country,
         };
     };
     const {
-        civ: describedCiv,
+        civName: describedCivName,
         era: describedEra,
         country: describedCountry,
     } = panelFacts(described);
@@ -288,8 +298,8 @@ export default function GraphExplorer({
                                 <span className="event-panel-era">{describedEra}</span>
                             )}
                             <div className="event-panel-meta">
-                                {describedCiv && (
-                                    <span className="event-panel-civ">{describedCiv.name}</span>
+                                {describedCivName && (
+                                    <span className="event-panel-civ">{describedCivName}</span>
                                 )}
                                 {describedCountry && (
                                     <span className="event-panel-country">{describedCountry}</span>
@@ -333,8 +343,8 @@ export default function GraphExplorer({
                                 <span className="event-panel-era">{story.era}</span>
                             )}
                             <div className="event-panel-meta">
-                                {story.civ && (
-                                    <span className="event-panel-civ">{story.civ.name}</span>
+                                {story.civName && (
+                                    <span className="event-panel-civ">{story.civName}</span>
                                 )}
                                 {story.country && (
                                     <span className="event-panel-country">{story.country}</span>

@@ -52,6 +52,10 @@ interface WireNode {
   lat?: number;
   lon?: number;
   year?: number;
+  era?: string;
+  civName?: string;
+  country?: string;
+  civilizationId?: string;
   image?: string;
   glyph?: string;
 }
@@ -89,24 +93,58 @@ export const loadError = (id: string): string | undefined => failed.get(id);
 export const isExpanded = (id: string): boolean =>
   expanded.has(id) || !isLiveId(id); // core nodes are always "expanded"
 
+function haversine(aLat: number, aLon: number, bLat: number, bLon: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLon = toRad(bLon - aLon);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * Math.asin(Math.sqrt(s));
+}
+
+/** Nearest curated civilization to a coordinate — the story's "ground". */
+export function nearestCiv(lat?: number, lon?: number): string {
+  if (lat === undefined || lon === undefined) return CIVILIZATIONS[0].id;
+  let best = CIVILIZATIONS[0];
+  let bestD = Infinity;
+  for (const c of CIVILIZATIONS) {
+    const d = haversine(lat, lon, c.lat, c.lon);
+    if (d < bestD) {
+      bestD = d;
+      best = c;
+    }
+  }
+  return best.id;
+}
+
 // ── merge helpers ────────────────────────────────────────────────────────
 function addNode(w: WireNode | WireNeighbor, full: boolean): void {
   const existing = NODE_MAP[w.id];
-  const era = w.year !== undefined ? formatYear(w.year) : undefined;
-  const summary = (w as WireNode).summary ?? '';
+  const wn = w as WireNode;
+  const era = wn.era || (w.year !== undefined ? formatYear(w.year) : undefined);
+  const civName = wn.civName;
+  const country = wn.country;
+  const glyph = wn.glyph;
+  const summary = wn.summary ?? '';
   const desc = (w as WireNeighbor).desc ?? '';
-  const image = (w as WireNode).image;
+  const image = wn.image;
+  const civilizationId =
+    wn.civilizationId ??
+    (w.lat !== undefined && w.lon !== undefined ? nearestCiv(w.lat, w.lon) : undefined);
   // A neighbour stub carries a one-line description; a full node carries a rich
   // summary. Either is enough to make the info panel read richly on first sight.
   const initialText = full ? summary || desc : desc;
+  const hasDetails = Boolean(era || glyph || civName || country);
   if (!existing) {
     const node: KnowledgeNode = {
       id: w.id,
       label: w.label,
       type: w.type,
+      civilizationId,
       summary: initialText,
-      details: era || (w as WireNode).glyph
-        ? { era, glyph: (w as WireNode).glyph }
+      details: hasDetails
+        ? { era, glyph, civName, country }
         : undefined,
     };
     NODE_MAP[w.id] = node;
@@ -116,8 +154,17 @@ function addNode(w: WireNode | WireNeighbor, full: boolean): void {
     // Upgrade a thin summary when a richer one (or any at all) arrives.
     if (full && summary && existing.summary !== summary) existing.summary = summary;
     else if (!existing.summary && initialText) existing.summary = initialText;
-    if (era && !existing.details?.era) {
-      existing.details = { ...existing.details, era };
+    if (civilizationId && !existing.civilizationId) {
+      existing.civilizationId = civilizationId;
+    }
+    if (hasDetails) {
+      existing.details = {
+        ...existing.details,
+        ...(era ? { era } : {}),
+        ...(civName ? { civName } : {}),
+        ...(country ? { country } : {}),
+        ...(glyph ? { glyph } : {}),
+      };
     }
   }
   const geo = (NODE_GEO[w.id] ??= {});
@@ -153,10 +200,11 @@ function merge(data: NodeResponse): void {
 // ── IndexedDB (raw, no dependency) ─────────────────────────────────────────
 const DB_NAME = 'atlante';
 const STORE = 'nodes';
+const STORY_STORE = 'stories';
 // Bump when the node/neighbour shape or backend logic changes so stale client
 // caches are dropped on next load — otherwise a node cached empty/failed under
 // old code keeps being served from the browser and never re-fetches.
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 
 function openDB(): Promise<IDBDatabase | null> {
@@ -168,7 +216,9 @@ function openDB(): Promise<IDBDatabase | null> {
       const db = req.result;
       // Drop any prior cache so an upgraded client always starts clean.
       if (db.objectStoreNames.contains(STORE)) db.deleteObjectStore(STORE);
+      if (db.objectStoreNames.contains(STORY_STORE)) db.deleteObjectStore(STORY_STORE);
       db.createObjectStore(STORE);
+      db.createObjectStore(STORY_STORE);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => resolve(null);
@@ -193,6 +243,28 @@ async function idbPut(id: string, data: NodeResponse): Promise<void> {
   await new Promise<void>((resolve) => {
     const tx = db.transaction(STORE, 'readwrite');
     tx.objectStore(STORE).put(data, id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+}
+
+async function idbGetStory(key: string): Promise<StoryResponse | null> {
+  const db = await openDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORY_STORE, 'readonly');
+    const req = tx.objectStore(STORY_STORE).get(key);
+    req.onsuccess = () => resolve((req.result as StoryResponse) ?? null);
+    req.onerror = () => resolve(null);
+  });
+}
+
+async function idbPutStory(key: string, data: StoryResponse): Promise<void> {
+  const db = await openDB();
+  if (!db) return;
+  await new Promise<void>((resolve) => {
+    const tx = db.transaction(STORY_STORE, 'readwrite');
+    tx.objectStore(STORY_STORE).put(data, key);
     tx.oncomplete = () => resolve();
     tx.onerror = () => resolve();
   });
@@ -339,91 +411,34 @@ interface StoryResponse {
 }
 
 /**
- * Strip question scaffolding and filler so a phrase like "How did zero" or
- * "the modern world" reduces to the concept a Wikidata search can actually
- * resolve ("zero", "modern world").
- */
-function cleanConcept(s: string): string {
-  let t = s.trim().replace(/[?.!]+$/, '').trim();
-  const FILLER = /^(how|why|what|when|where|who|which|did|do|does|was|were|is|are|has|have|the|a|an|of|about)\s+/i;
-  let prev: string;
-  do {
-    prev = t;
-    t = t.replace(FILLER, '').trim();
-  } while (t !== prev && t.length > 0);
-  return t || s.trim();
-}
-
-/** Split "gunpowder to the internet" into its two endpoint concepts. */
-function splitConcepts(text: string): [string, string] | null {
-  const parts = text
-    .split(/\s*(?:->|→|\bbec[ao]mes?\b|\bto\b|\bthen\b|\binto\b|\bfrom\b|\band\b|,)\s*/i)
-    .map((s) => cleanConcept(s))
-    .filter(Boolean);
-  if (parts.length < 2) return null;
-  return [parts[0], parts[parts.length - 1]];
-}
-
-function haversine(aLat: number, aLon: number, bLat: number, bLon: number): number {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(bLat - aLat);
-  const dLon = toRad(bLon - aLon);
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLon / 2) ** 2;
-  return 2 * Math.asin(Math.sqrt(s));
-}
-
-/** Nearest curated civilization to a coordinate — the story's "ground". */
-function nearestCiv(lat?: number, lon?: number): string {
-  if (lat === undefined || lon === undefined) return CIVILIZATIONS[0].id;
-  let best = CIVILIZATIONS[0];
-  let bestD = Infinity;
-  for (const c of CIVILIZATIONS) {
-    const d = haversine(lat, lon, c.lat, c.lon);
-    if (d < bestD) {
-      bestD = d;
-      best = c;
-    }
-  }
-  return best.id;
-}
-
-/**
- * Build a guided story between two internet concepts: resolve both endpoints,
- * ask the backend for a Gemini-narrated path, merge its nodes into the graph,
- * and ground it on the civilization nearest the starting concept.
+ * Build a guided 6–8 stop historical story directly via Gemini on the backend
+ * (with client-side IndexedDB caching by prompt), merge its rich nodes into
+ * the graph, and ground it on the civilization nearest the first stop.
  */
 export async function buildLiveStory(text: string): Promise<Story | null> {
-  const pair = splitConcepts(text);
-  let from: string | null;
-  let to: string | null;
-  if (pair) {
-    [from, to] = await Promise.all([resolveTerm(pair[0]), resolveTerm(pair[1])]);
-  } else {
-    // Single concept: anchor on it, then journey to its most notable neighbour.
-    from = await resolveTerm(cleanConcept(text));
-    to = null;
-    if (from) {
-      const node = await fetchNode(from).catch(() => null);
-      to = node?.neighbors?.find((n) => n.id !== from)?.id ?? null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const cacheKey = trimmed.toLowerCase();
+
+  let data = await idbGetStory(cacheKey);
+  if (!data) {
+    try {
+      const res = await fetch(`${API_BASE}/story`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: trimmed }),
+      });
+      if (!res.ok) return null;
+      data = await res.json();
+      if (data?.steps?.length && data?.nodes?.length) {
+        void idbPutStory(cacheKey, data);
+      }
+    } catch {
+      return null;
     }
   }
-  if (!from || !to || from === to) return null;
 
-  let data: StoryResponse;
-  try {
-    const res = await fetch(`${API_BASE}/story`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ from, to, question: text.trim() }),
-    });
-    if (!res.ok) return null;
-    data = await res.json();
-  } catch {
-    return null;
-  }
-  if (!data.steps?.length) return null;
+  if (!data?.steps?.length || !data?.nodes?.length) return null;
 
   for (const w of data.nodes) addNode(w, true);
   for (let i = 0; i < data.steps.length - 1; i++) {
@@ -431,10 +446,11 @@ export async function buildLiveStory(text: string): Promise<Story | null> {
   }
   emit();
 
-  const fromNode = data.nodes.find((n) => n.id === from);
+  const firstStepId = data.steps[0].nodeId;
+  const fromNode = data.nodes.find((n) => n.id === firstStepId) ?? data.nodes[0];
   return {
-    id: data.id || `live-${Date.now().toString(36)}`,
-    question: data.question || text.trim(),
+    id: data.id || `story-${Date.now().toString(36)}`,
+    question: data.question || trimmed,
     civilizationId: nearestCiv(fromNode?.lat, fromNode?.lon),
     steps: data.steps,
   };
