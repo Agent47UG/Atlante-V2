@@ -29,7 +29,17 @@ export default function StoriesMenu({ open, stories, onPlay, onBuild, onClose }:
     const [text, setText] = useState('');
     const [error, setError] = useState(false);
     const [busy, setBusy] = useState(false);
+    const [slow, setSlow] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (!busy) {
+            setSlow(false);
+            return;
+        }
+        const timer = window.setTimeout(() => setSlow(true), 5000);
+        return () => window.clearTimeout(timer);
+    }, [busy]);
 
     useEffect(() => {
         if (!open) return;
@@ -116,14 +126,21 @@ export default function StoriesMenu({ open, stories, onPlay, onBuild, onClose }:
                             </button>
                         </div>
                         {busy && (
-                            <p className="stories-loading" role="status" aria-live="polite">
-                                Charting your story
-                                <span className="stories-dots" aria-hidden="true">
-                                    <span />
-                                    <span />
-                                    <span />
-                                </span>
-                            </p>
+                            <div className="stories-loading-wrap" role="status" aria-live="polite">
+                                <p className="stories-loading">
+                                    Charting your story
+                                    <span className="stories-dots" aria-hidden="true">
+                                        <span />
+                                        <span />
+                                        <span />
+                                    </span>
+                                </p>
+                                {slow && (
+                                    <p className="stories-loading-sub">
+                                        This may take a while as we trace the archives…
+                                    </p>
+                                )}
+                            </div>
                         )}
                         {error && (
                             <p className="stories-error" role="alert">

@@ -1452,17 +1452,34 @@ body::after {
     color: #e0967f;
 }
 
+.stories-loading-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0.85rem 0.5rem 0;
+}
+
 .stories-loading {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.1rem;
-    margin: 0.85rem 0.5rem 0;
+    margin: 0;
     font-family: 'Spectral', Georgia, serif;
     font-style: italic;
     font-size: 0.9rem;
     letter-spacing: 0.02em;
     color: var(--star-light);
+}
+
+.stories-loading-sub {
+    margin: 0;
+    font-family: 'Spectral', Georgia, serif;
+    font-size: 0.78rem;
+    color: var(--sky-ink-soft);
+    text-align: center;
+    animation: eventPanelIn 400ms ease;
 }
 
 .stories-dots {
