@@ -35,16 +35,17 @@ const VALID_TYPES = new Set<NodeType>([
 let cachedWorkingModel: string | null = null;
 
 /**
- * Query Google's `/v1beta/models` list to dynamically find the newest active
- * Gemini Flash text model supporting `generateContent`. Used if all hardcoded
- * model names are ever retired.
+ * Query Google's `/v1beta/models` list to dynamically find active Gemini Flash
+ * text models supporting `generateContent`. Prefers stable numbered Flash and
+ * Flash-Lite models over experimental/preview/omni variants (which often have
+ * 0 free-tier quota).
  */
-async function discoverLatestFlashModel(apiKey: string): Promise<string | null> {
+async function discoverFlashModels(apiKey: string): Promise<string[]> {
   try {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
     );
-    if (!res.ok) return null;
+    if (!res.ok) return [];
     const data: any = await res.json();
     const list: any[] = data?.models ?? [];
     const candidates = list
@@ -58,16 +59,27 @@ async function discoverLatestFlashModel(apiKey: string): Promise<string | null> 
           !name.includes('tts') &&
           !name.includes('image') &&
           !name.includes('audio') &&
-          !name.includes('embedding')
+          !name.includes('embedding') &&
+          !name.includes('thinking') &&
+          !/gemini-[12]\./.test(name)
         );
       })
       .map((m) => String(m.name).replace(/^models\//, ''));
 
-    // Sort descending so highest version numbers (e.g. gemini-4.x-flash > gemini-3.8-flash) come first.
-    candidates.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-    return candidates[0] ?? null;
+    const score = (name: string): number => {
+      const lower = name.toLowerCase();
+      // Penalize preview / exp / omni models because they frequently have 0 free quota.
+      const isPreview =
+        lower.includes('preview') || lower.includes('exp') || lower.includes('omni');
+      const verMatch = /gemini-(\d+(?:\.\d+)?)/.exec(lower);
+      const ver = verMatch ? parseFloat(verMatch[1]) : 0;
+      return (isPreview ? 0 : 100) + ver;
+    };
+
+    candidates.sort((a, b) => score(b) - score(a));
+    return candidates.slice(0, 4);
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -137,9 +149,7 @@ export async function generateStory(
   }
 
   const configuredModel = env.GEMINI_MODEL?.trim();
-  // Prefer gemini-3.8-flash (current active Gemini Flash model). Ignore legacy
-  // 1.x / 2.x GEMINI_MODEL env values if they are still set in dashboard vars,
-  // or try them only after gemini-3.8-flash and gemini-flash-latest.
+  // Ignore retired 1.x / 2.x GEMINI_MODEL env values if still set in dashboard vars.
   const isLegacyConfigured =
     configuredModel && /^gemini-[12]\./i.test(configuredModel);
   const models = Array.from(
@@ -148,8 +158,9 @@ export async function generateStory(
         cachedWorkingModel,
         !isLegacyConfigured ? configuredModel : undefined,
         'gemini-3.8-flash',
+        'gemini-3.8-flash-lite',
         'gemini-flash-latest',
-        isLegacyConfigured ? configuredModel : undefined,
+        'gemini-flash-lite-latest',
       ].filter(Boolean) as string[],
     ),
   );
@@ -184,8 +195,7 @@ Rules:
 3. "year" must be an integer (negative for BC, positive for AD, e.g. -3000 or 1679).
 4. "lat" (-85 to 85) and "lon" (-180 to 180) must be terrestrial land coordinates inside "country" so the 3D globe can fly there and highlight the country.`;
 
-  let lastError = 'Unknown Gemini failure';
-
+  const errors: string[] = [];
   const tried = new Set<string>();
   let discoveredFromApi = false;
 
@@ -213,7 +223,9 @@ Rules:
 
       if (!res.ok) {
         const errBody = await res.text().catch(() => '');
-        lastError = `Model ${model} HTTP ${res.status}: ${errBody.slice(0, 200)}`;
+        const msgMatch = /"message"\s*:\s*"([^"]+)"/.exec(errBody);
+        const shortErr = msgMatch ? msgMatch[1] : errBody.slice(0, 120);
+        errors.push(`${model} (${res.status}): ${shortErr}`);
         if (cachedWorkingModel === model) cachedWorkingModel = null;
         // 1. If Google's 404 message recommends a replacement model
         //    (e.g. "Please update your code to use models/gemini-3.8-flash"),
@@ -222,13 +234,17 @@ Rules:
         if (suggested && !tried.has(suggested) && !models.includes(suggested)) {
           models.push(suggested);
         }
-        // 2. If we've exhausted known models on a 404, query Google's /v1beta/models
-        //    endpoint to auto-discover the newest active Flash model.
-        if (res.status === 404 && idx === models.length - 1 && !discoveredFromApi) {
+        // 2. If we've exhausted known models on 404 or 429, query Google's
+        //    /v1beta/models endpoint to auto-discover other active Flash models.
+        if (
+          (res.status === 404 || res.status === 429) &&
+          idx === models.length - 1 &&
+          !discoveredFromApi
+        ) {
           discoveredFromApi = true;
-          const discovered = await discoverLatestFlashModel(apiKey);
-          if (discovered && !tried.has(discovered)) {
-            models.push(discovered);
+          const discovered = await discoverFlashModels(apiKey);
+          for (const d of discovered) {
+            if (!tried.has(d) && !models.includes(d)) models.push(d);
           }
         }
         continue;
@@ -239,11 +255,11 @@ Rules:
       const data: any = await res.json();
       const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
       if (!parts.length) {
-        lastError = `Model ${model} returned no content parts`;
+        errors.push(`${model}: no content parts`);
         continue;
       }
 
-      // Gemini 2.5 thinking models may emit a thought part before the JSON part.
+      // Thinking models may emit a thought part before the JSON part.
       // Try non-thought parts from last to first, then fall back to all parts.
       const orderedParts = [
         ...parts.filter((p) => !p?.thought && typeof p?.text === 'string').reverse(),
@@ -257,7 +273,8 @@ Rules:
       }
 
       if (!parsed) {
-        lastError = `Model ${model} returned non-JSON text`;
+        const sample = String(orderedParts[0]?.text ?? '').slice(0, 120);
+        errors.push(`${model}: non-JSON (${sample})`);
         continue;
       }
 
@@ -270,7 +287,7 @@ Rules:
             : [];
 
       if (rawStops.length < 2) {
-        lastError = `Model ${model} returned fewer than 2 stops`;
+        errors.push(`${model}: <2 stops`);
         continue;
       }
 
@@ -309,7 +326,7 @@ Rules:
       }
 
       if (stops.length < 2) {
-        lastError = `Model ${model} produced fewer than 2 valid stops`;
+        errors.push(`${model}: <2 valid stops`);
         continue;
       }
 
@@ -320,9 +337,9 @@ Rules:
         },
       };
     } catch (err: any) {
-      lastError = `Model ${model} exception: ${err?.message ?? err}`;
+      errors.push(`${model} exception: ${err?.message ?? err}`);
     }
   }
 
-  return { story: null, error: lastError };
+  return { story: null, error: errors.join(' | ') || 'Unknown Gemini failure' };
 }
